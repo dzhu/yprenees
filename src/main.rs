@@ -1,4 +1,5 @@
 use std::{
+    collections::BTreeMap,
     env,
     fmt::{Display, Error, Formatter},
 };
@@ -19,7 +20,7 @@ impl Path {
 
         let mut ret = vec![];
         let mut i = 0;
-        while i < n - 1 {
+        while i < n - 1 && self.partition[i] > 0 {
             ret.push(self.partition[i]);
             i = n - self.partition[i];
         }
@@ -87,15 +88,31 @@ fn main() {
     let args: Vec<_> = env::args().collect();
     let sz: usize = args[1].parse().unwrap();
 
-    for (i, p) in all_paths(sz).into_iter().enumerate() {
+    let mut by_total_and_area = BTreeMap::<usize, BTreeMap<usize, Vec<Path>>>::new();
+
+    for p in all_paths(sz).into_iter() {
         let a = p.area();
         let b = p.bounce();
+        by_total_and_area
+            .entry(a + b)
+            .or_default()
+            .entry(a)
+            .or_default()
+            .push(p);
+    }
 
-        let c = a + b;
-        let bs = p.bounce_locs();
-        let part = &p.partition;
-        println!("==== {i}:");
-        println!("{p}");
-        println!("total: {c:2}  area: {a:2}  bounce: {b:2} ({bs:?})  part: {part:?}");
+    for (total, by_area) in by_total_and_area {
+        println!("\x1b[32;1m================================================================ total: {total:2}\x1b[m");
+        for (area, paths) in by_area.into_iter().rev() {
+            println!(
+                "\x1b[36m================ area: {area:2}  bounce: {:2}  ({:2} paths)\x1b[m",
+                paths[0].bounce(),
+                paths.len()
+            );
+            for p in paths {
+                println!("bounces: {:?}", p.bounce_locs());
+                println!("{p}");
+            }
+        }
     }
 }
