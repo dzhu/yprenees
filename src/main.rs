@@ -5,10 +5,18 @@ use std::{
     mem,
 };
 
+use bitmap_font::{tamzen, TextStyle};
+use embedded_graphics::{
+    pixelcolor::BinaryColor,
+    prelude::Point,
+    text::{renderer::TextRenderer, Baseline, Text},
+    Drawable,
+};
 use gumdrop::Options;
 use image::RgbImage;
-use imageproc::rect::Rect;
-use rusttype::{Font, Scale};
+use imageproc::{drawing, rect::Rect};
+
+mod draw;
 
 #[derive(Debug, Options)]
 enum Opts {
@@ -119,6 +127,27 @@ fn for_all_paths<F: FnMut(&Path)>(sz: usize, cb: &mut F) {
     }
 
     helper(sz, &mut vec![], cb);
+}
+
+fn calc_partitions(end: usize) -> Vec<usize> {
+    // nums[n][k] is the number of partitions of n with largest part k.
+    let mut nums = vec![vec![1]];
+    for n in 1..=end {
+        nums.push(
+            (0..=n)
+                .map(|k| {
+                    if k == 0 {
+                        0
+                    } else {
+                        (0..=k).map(|j| nums[n - k].get(j).unwrap_or(&0)).sum()
+                    }
+                })
+                .collect(),
+        );
+    }
+    nums.into_iter()
+        .map(|row| row.into_iter().sum::<usize>())
+        .collect()
 }
 
 fn tri(n: usize) -> usize {
@@ -244,55 +273,58 @@ fn draw_ab_counts(sz: usize) -> RgbImage {
     });
 
     let max = tri(sz - 1);
+    let partitions = calc_partitions(max);
     let img_dim = (BOX_SEP * (max + 1) + 1) as u32;
 
     let mut img = RgbImage::new(img_dim, img_dim);
 
-    let font_data: &[u8] = include_bytes!("/usr/share/fonts/TTF/Anonymous Pro.ttf");
-    let font: Font<'static> = Font::try_from_bytes(font_data).unwrap();
-
-    use imageproc::drawing;
     let line_color = [64, 64, 64].into();
     let text_color = [255, 255, 255].into();
-    let chain_color = [0, 40, 0].into();
+    let text_style = TextStyle::new(&tamzen::FONT_6x12, BinaryColor::On);
 
     let mut min_locs = vec![];
     for area in 0..=max {
-        for bounce in 0..=max {
-            if let Some(n) = by_area_and_bounce.get(&area).and_then(|m| m.get(&bounce)) {
-                let s = format!("{n}");
-                let scale = Scale::uniform(10.0);
-                let text_size = drawing::text_size(scale, &font, &s);
+        for bounce in 0..=max - area {
+            if let Some(&n) = by_area_and_bounce.get(&area).and_then(|m| m.get(&bounce)) {
                 let is_chain_start = area == 0
-                    || by_area_and_bounce
+                    || *by_area_and_bounce
                         .get(&(area - 1))
                         .and_then(|m| m.get(&(bounce + 1)))
                         .unwrap_or(&0)
                         != n
                     || bounce == 0
-                    || by_area_and_bounce
+                    || *by_area_and_bounce
                         .get(&(area + 1))
                         .and_then(|m| m.get(&(bounce - 1)))
                         .unwrap_or(&0)
                         != n;
+                let is_partition = n == partitions[max - (bounce + area)];
 
-                if is_chain_start {
-                    drawing::draw_filled_rect_mut(
-                        &mut img,
-                        Rect::at((BOX_SEP * area) as _, (BOX_SEP * bounce) as _)
-                            .of_size(BOX_SEP as _, BOX_SEP as _),
-                        chain_color,
-                    );
-                }
-                drawing::draw_text_mut(
+                let box_color = match (is_chain_start, is_partition) {
+                    (true, true) => [0, 70, 100],
+                    (true, false) => [0, 50, 0],
+                    (false, true) => [0, 0, 80],
+                    (false, false) => [0, 0, 0],
+                };
+
+                drawing::draw_filled_rect_mut(
                     &mut img,
-                    text_color,
-                    (BOX_SEP * area + BOX_SEP / 2) as i32 - text_size.0 / 2,
-                    (BOX_SEP * bounce + BOX_SEP / 2) as i32 - text_size.1 / 2,
-                    scale,
-                    &font,
-                    &s,
+                    Rect::at((BOX_SEP * area) as _, (BOX_SEP * bounce) as _)
+                        .of_size(BOX_SEP as _, BOX_SEP as _),
+                    box_color.into(),
                 );
+
+                let s = format!(
+                    "{}",
+                    n as isize - partitions[max - (bounce + area)] as isize
+                );
+                let x = (BOX_SEP * area + BOX_SEP / 2) as i32 + 1;
+                let y = (BOX_SEP * bounce + BOX_SEP / 2) as i32 + 1;
+                let pos = Point::new(x, y);
+                let metrics = text_style.measure_string(&s, pos, Baseline::Middle);
+                Text::new(&s, pos - metrics.bounding_box.size / 2, text_style)
+                    .draw(&mut draw::ImageDrawTargetWrapper::new(&mut img, text_color))
+                    .unwrap();
 
                 if area == 0
                     || by_area_and_bounce
