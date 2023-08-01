@@ -2,6 +2,7 @@ use std::{
     cmp::Reverse,
     collections::BTreeMap,
     fmt::{Display, Error, Formatter},
+    mem,
 };
 
 use gumdrop::Options;
@@ -37,7 +38,7 @@ struct ShowAllOpts {
     sz: usize,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 struct Path {
     partition: Vec<usize>,
 }
@@ -95,26 +96,29 @@ impl Display for Path {
     }
 }
 
-fn all_paths(sz: usize) -> Vec<Path> {
-    fn helper(sz: usize, cur: &mut Vec<usize>, out: &mut Vec<Path>) {
+fn for_all_paths<F: FnMut(&Path)>(sz: usize, cb: &mut F) {
+    fn helper<F: FnMut(&Path)>(sz: usize, cur: &mut Vec<usize>, cb: &mut F) {
         if cur.len() == sz - 1 {
-            out.push(Path {
-                partition: cur.clone(),
-            });
+            let path = Path {
+                partition: mem::take(cur),
+            };
+            cb(&path);
+            let Path {
+                partition: mut path,
+            } = path;
+            mem::swap(&mut path, cur);
             return;
         }
         let i = cur.len();
         let lim = cur.last().cloned().unwrap_or(sz).min(sz - i - 1);
         for h in 0..=lim {
             cur.push(h);
-            helper(sz, cur, out);
+            helper(sz, cur, cb);
             cur.pop();
         }
     }
 
-    let mut ret = vec![];
-    helper(sz, &mut vec![], &mut ret);
-    ret
+    helper(sz, &mut vec![], cb);
 }
 
 fn tri(n: usize) -> usize {
@@ -229,7 +233,7 @@ fn draw_ab_counts(sz: usize) -> RgbImage {
     const BOX_SEP: usize = 22;
 
     let mut by_area_and_bounce = BTreeMap::<usize, BTreeMap<usize, usize>>::new();
-    for p in all_paths(sz).into_iter() {
+    for_all_paths(sz, &mut |p| {
         let a = p.area();
         let b = p.bounce();
         *by_area_and_bounce
@@ -237,7 +241,7 @@ fn draw_ab_counts(sz: usize) -> RgbImage {
             .or_default()
             .entry(b)
             .or_default() += 1;
-    }
+    });
 
     let max = tri(sz - 1);
     let img_dim = (BOX_SEP * (max + 1) + 1) as u32;
@@ -337,7 +341,7 @@ fn main() {
         Opts::ShowAll(ShowAllOpts { sz }) => {
             let mut by_total_and_area = BTreeMap::<usize, BTreeMap<usize, Vec<Path>>>::new();
 
-            for p in all_paths(sz).into_iter() {
+            for_all_paths(sz, &mut |p| {
                 let a = p.area();
                 let b = p.bounce();
                 by_total_and_area
@@ -345,8 +349,8 @@ fn main() {
                     .or_default()
                     .entry(a)
                     .or_default()
-                    .push(p);
-            }
+                    .push(p.clone());
+            });
 
             for (total, by_area) in by_total_and_area {
                 println!("\x1b[32;1m================================================================ total: {total:2}\x1b[m");
