@@ -3,7 +3,7 @@ use std::{
     collections::BTreeMap,
     fmt::{Display, Error, Formatter},
     fs::File,
-    mem,
+    iter, mem,
     path::PathBuf,
 };
 
@@ -322,6 +322,50 @@ fn calc_table(sz: usize) -> Vec<Vec<usize>> {
     table
 }
 
+fn fit_hyperbola(pts: &[(f64, f64)]) -> (f64, f64, Vec<(f64, f64)>) {
+    let s2 = 1.0 / 2.0f64.sqrt();
+    let n = pts.len() as f64;
+    let pts: Vec<_> = pts
+        .iter()
+        .map(|&(x, y)| ((x - y) * s2, (x + y) * s2))
+        .collect();
+
+    let mut c = (pts.iter().map(|&(x, y)| y * y - x * x).sum::<f64>() / n).sqrt();
+    let mut d = 0.0;
+
+    for _ in 0..20000 {
+        let diff_c = c * (n - pts.iter().map(|&(x, y)| (y - d) / c.hypot(x)).sum::<f64>());
+        let delta_c = diff_c * 0.005;
+        let d2 = pts.iter().map(|&(x, y)| y - c.hypot(x)).sum::<f64>() / n;
+
+        if delta_c.abs() < 1e-6 && (d2 - d).abs() < 1e-6 {
+            break;
+        }
+        c -= delta_c;
+        d = d2;
+    }
+
+    const N: usize = 4;
+    let out_xs = pts
+        .iter()
+        .zip(pts.iter().skip(1))
+        .flat_map(|(&(x0, _), &(x1, _))| {
+            (0..N).map(move |i| (x0 + i as f64 * (x1 - x0) / N as f64))
+        })
+        .chain(iter::once(pts.last().unwrap().0));
+
+    (
+        c,
+        d,
+        out_xs
+            .map(|x| {
+                let y = c.hypot(x) + d;
+                ((x + y) * s2, (y - x) * s2)
+            })
+            .collect(),
+    )
+}
+
 fn draw_table(table: &[Vec<usize>]) -> RgbImage {
     const BOX_SEP: usize = 22;
 
@@ -382,10 +426,8 @@ fn draw_table(table: &[Vec<usize>]) -> RgbImage {
                 .draw(&mut draw::ImageDrawTargetWrapper::new(&mut img, text_color))
                 .unwrap();
 
-            if area == 0
-                || bounce == 0
-                || table[area - 1][bounce] == 0
-                || table[area][bounce - 1] == 0
+            if (area == 0 || table[area - 1][bounce] == 0)
+                && (bounce == 0 || table[area][bounce - 1] == 0)
             {
                 min_locs.push((area, bounce));
             }
@@ -399,6 +441,8 @@ fn draw_table(table: &[Vec<usize>]) -> RgbImage {
         drawing::draw_line_segment_mut(&mut img, p0, p1, line_color);
         drawing::draw_line_segment_mut(&mut img, (p0.1, p0.0), (p1.1, p1.0), line_color);
     }
+
+    min_locs.sort_by_key(|&(a, b)| (a, Reverse(b)));
 
     // Draw miniature heat map.
     let max_val = *table.iter().flat_map(|row| row.iter()).max().unwrap();
@@ -432,9 +476,45 @@ fn draw_table(table: &[Vec<usize>]) -> RgbImage {
         }
     }
 
-    min_locs.sort_by_key(|&(a, b)| (a, Reverse(b)));
-    for (a, b) in min_locs {
-        println!("{a} {b}");
+    // Draw hyperbola fitted to boundary of table.
+    let (c, d, pts) = fit_hyperbola(
+        &min_locs
+            .iter()
+            .map(|&(x, y)| (x as f64, y as f64))
+            .collect::<Vec<_>>(),
+    );
+
+    let to_img = |(x, y): (f64, f64)| {
+        (
+            (BOX_SEP as f64 * x).round() as f32,
+            (BOX_SEP as f64 * y).round() as f32,
+        )
+    };
+
+    for (&p, &q) in pts.iter().zip(pts.iter().skip(1)) {
+        drawing::draw_line_segment_mut(&mut img, to_img(p), to_img(q), [255, 255, 255].into());
+    }
+
+    let text_style = TextStyle::new(
+        if max >= 15 {
+            &tamzen::FONT_12x24
+        } else {
+            &tamzen::FONT_5x9
+        },
+        BinaryColor::On,
+    );
+    let ss = [
+        format!("vert_dist = {c:5.2}"),
+        format!("cent_ofs = {d:5.2}"),
+    ];
+    let mut y = 1;
+    for s in ss {
+        let pos = Point::new(1, y);
+        let metrics = text_style.measure_string(&s, pos, Baseline::Middle);
+        Text::new(&s, pos, text_style)
+            .draw(&mut draw::ImageDrawTargetWrapper::new(&mut img, text_color))
+            .unwrap();
+        y += metrics.bounding_box.size.height as i32;
     }
 
     img
