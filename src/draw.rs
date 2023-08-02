@@ -1,3 +1,5 @@
+//! A wrapper for using [`RgbImage`] as a draw target for [`embedded_graphics`].
+
 use std::convert::Infallible;
 
 use embedded_graphics::{

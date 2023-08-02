@@ -20,17 +20,27 @@ use imageproc::{drawing, rect::Rect};
 mod draw;
 mod opts;
 
+/// A Dyck path, equipped with the ability to compute relevant statistics.
 #[derive(Clone, Debug)]
 struct Path {
+    /// The partition for which the unfilled space between the path and the
+    /// maximum-area path is the Young diagram (with parts read going up-right,
+    /// in the view where the steps are up-right and down-right).
+    ///
+    /// The Dyck path is of order one greater than the length of this partition,
+    /// since the last move in the path would always correspond to a zero in the
+    /// partition, so we just leave out that zero.
     partition: Vec<usize>,
 }
 
 impl Path {
+    /// Computes the area of this path (the number of full squares underneath
+    /// it).
     fn area(&self) -> usize {
-        let sz = self.partition.len();
-        sz * (sz + 1) / 2 - self.partition.iter().sum::<usize>()
+        tri(self.partition.len()) - self.partition.iter().sum::<usize>()
     }
 
+    /// Computes the bounce locations of this path, measured from the right end.
     fn bounce_locs(&self) -> Vec<usize> {
         let n = self.partition.len() + 1;
 
@@ -43,6 +53,7 @@ impl Path {
         ret
     }
 
+    /// Computes the sum of bounce locations of this path.
     fn bounce(&self) -> usize {
         let n = self.partition.len() + 1;
 
@@ -78,17 +89,20 @@ impl Display for Path {
     }
 }
 
-fn for_all_paths<F: FnMut(&Path)>(sz: usize, cb: &mut F) {
+/// Calls `cb` on a [`Path`] containing the given partition.
+fn call_path_cb<F: FnMut(&Path)>(part: &mut Vec<usize>, cb: &mut F) {
+    let mut path = Path {
+        partition: mem::take(part),
+    };
+    cb(&path);
+    mem::swap(&mut path.partition, part);
+}
+
+/// Calls `cb` on each [`Path`] of the given length.
+fn for_all_paths<F: FnMut(&Path)>(len: usize, cb: &mut F) {
     fn helper<F: FnMut(&Path)>(sz: usize, last: usize, cur: &mut Vec<usize>, cb: &mut F) {
         if cur.len() == sz - 1 {
-            let path = Path {
-                partition: mem::take(cur),
-            };
-            cb(&path);
-            let Path {
-                partition: mut path,
-            } = path;
-            mem::swap(&mut path, cur);
+            call_path_cb(cur, cb);
             return;
         }
         let i = cur.len();
@@ -100,10 +114,11 @@ fn for_all_paths<F: FnMut(&Path)>(sz: usize, cb: &mut F) {
         }
     }
 
-    helper(sz, sz, &mut vec![], cb);
+    helper(len, len, &mut vec![], cb);
 }
 
-fn for_paths_with_area<F: FnMut(&Path)>(sz: usize, area: usize, cb: &mut F) {
+/// Calls `cb` on each [`Path`] of the given length and area.
+fn for_paths_with_area<F: FnMut(&Path)>(len: usize, area: usize, cb: &mut F) {
     fn helper<F: FnMut(&Path)>(
         sz: usize,
         last: usize,
@@ -113,14 +128,7 @@ fn for_paths_with_area<F: FnMut(&Path)>(sz: usize, area: usize, cb: &mut F) {
     ) {
         if cur.len() == sz - 1 {
             if remaining == 0 {
-                let path = Path {
-                    partition: mem::take(cur),
-                };
-                cb(&path);
-                let Path {
-                    partition: mut path,
-                } = path;
-                mem::swap(&mut path, cur);
+                call_path_cb(cur, cb);
             }
             return;
         }
@@ -134,10 +142,11 @@ fn for_paths_with_area<F: FnMut(&Path)>(sz: usize, area: usize, cb: &mut F) {
         }
     }
 
-    helper(sz, sz, tri(sz - 1) - area, &mut vec![], cb);
+    helper(len, len, tri(len - 1) - area, &mut vec![], cb);
 }
 
-fn calc_partitions(end: usize) -> Vec<usize> {
+/// Computes the number of partitions of each integer from 0 to `end` (inclusive).
+fn partition_numbers(end: usize) -> Vec<usize> {
     // nums[n][k] is the number of partitions of n with largest part k.
     let mut nums = vec![vec![1]];
     for n in 1..=end {
@@ -158,11 +167,19 @@ fn calc_partitions(end: usize) -> Vec<usize> {
         .collect()
 }
 
+/// Computes the nth triangular number.
 fn tri(n: usize) -> usize {
     n * (n + 1) / 2
 }
 
-fn search_minimal_partitions(sz: usize) -> Vec<Vec<usize>> {
+/// Finds partitions of `n` that may correspond to paths of length `n` with
+/// minimal area-plus-bounce.
+///
+/// The returned partitions are those that contain no numbers repeated more than
+/// twice or adjacent numbers with difference greater than 2. All actually
+/// minimal paths are guaranteed to be returned, but others will be returned as
+/// well.
+fn potentially_minimal_partitions(n: usize) -> Vec<Vec<usize>> {
     fn helper<F: FnMut(&[usize])>(
         cur: &mut Vec<usize>,
         cur_total: usize,
@@ -212,13 +229,13 @@ fn search_minimal_partitions(sz: usize) -> Vec<Vec<usize>> {
     }
 
     let mut ret = vec![];
-    let mut best_total = sz * (sz + 1) / 2;
-    for start in (1..=sz).rev() {
+    let mut best_total = tri(n);
+    for start in (1..=n).rev() {
         helper(
             &mut vec![start],
-            tri(start - 1) + sz - start,
+            tri(start - 1) + n - start,
             &mut best_total,
-            sz - start,
+            n - start,
             start,
             1,
             &mut |p| {
@@ -229,17 +246,19 @@ fn search_minimal_partitions(sz: usize) -> Vec<Vec<usize>> {
     ret
 }
 
-fn count_minimal_partitions(start: usize, end: usize) {
-    for sz in start..=end {
-        fn value(p: &[usize]) -> usize {
-            let a: usize = p.iter().map(|&n| n * (n - 1) / 2).sum();
-            let b: usize = p.iter().enumerate().map(|(i, &n)| i * n).sum();
-            a + b
-        }
+/// Displays information about minimal paths of the given length in a
+/// human-readable format.
+fn show_minimal_partitions(start: usize, end: usize) {
+    fn value(p: &[usize]) -> usize {
+        let a: usize = p.iter().map(|&n| n * (n - 1) / 2).sum();
+        let b: usize = p.iter().enumerate().map(|(i, &n)| i * n).sum();
+        a + b
+    }
 
-        let ps = search_minimal_partitions(sz);
+    for len in start..=end {
+        let ps = potentially_minimal_partitions(len);
         let min = ps.iter().map(|p| value(p)).min().unwrap();
-        println!("================ {sz} {min} {}", ps.len());
+        println!("================ len: {len}    min A+B: {min}");
         let mut num_mins = 0;
         let mut areas: BTreeMap<usize, usize> = BTreeMap::new();
 
@@ -251,30 +270,32 @@ fn count_minimal_partitions(start: usize, end: usize) {
             num_mins += 1;
             let area: usize = p.iter().map(|n| tri(n - 1)).sum();
             *areas.entry(area).or_default() += 1;
-            if true {
-                println!(
-                    "\x1b[{}m{} {p:?}\x1b[m",
-                    if v == min { "32;1" } else { "" },
-                    v
-                );
-            }
+            println!("{v} {p:?}");
         }
-        println!("{num_mins} mins");
+        println!("\x1b[32m{num_mins}\x1b[m minimal partitions");
+        println!("counts by area:");
         for (area, num) in areas {
-            println!("{area} {num}");
+            println!("{area:3} {num:3}");
         }
     }
 }
 
-fn calc_table(sz: usize) -> Vec<Vec<usize>> {
-    let max = tri(sz - 1);
+/// Calculates the full area/bounce count table for paths of the given length.
+fn calc_table(len: usize) -> Vec<Vec<usize>> {
+    let max = tri(len - 1);
     let mut table: Vec<_> = (1..=max + 1).rev().map(|n| vec![0; n]).collect();
-    for_all_paths(sz, &mut |p| {
+    for_all_paths(len, &mut |p| {
         table[p.area()][p.bounce()] += 1;
     });
     table
 }
 
+/// Performs a least-squares fit to the given points using a hyperbola in a
+/// particular class.
+///
+/// The hyperbola is constrained to have axis-aligned asymptotes and its center
+/// on the line x=y, so its equation is of the form (x - d) * (y - d) = c^2. The
+/// return value is (c, d).
 fn fit_hyperbola(pts: &[(f64, f64)]) -> (f64, f64) {
     let s2 = 1.0 / 2.0f64.sqrt();
     let n = pts.len() as f64;
@@ -297,9 +318,10 @@ fn fit_hyperbola(pts: &[(f64, f64)]) -> (f64, f64) {
         c -= delta_c;
         d = d2;
     }
-    (c, d)
+    (c * s2, d * s2)
 }
 
+/// Creates an image representing the given area/bounce count table.
 fn draw_table(table: &[Vec<usize>]) -> RgbImage {
     const BOX_SEP: usize = 22;
 
@@ -309,7 +331,7 @@ fn draw_table(table: &[Vec<usize>]) -> RgbImage {
         .all(|(i, row)| i + row.len() == table.len()));
     let max = table.len() - 1;
 
-    let partitions = calc_partitions(max);
+    let partitions = partition_numbers(max);
     let img_dim = (BOX_SEP * (max + 1) + 1) as u32;
 
     let mut img = RgbImage::new(img_dim, img_dim);
@@ -418,11 +440,9 @@ fn draw_table(table: &[Vec<usize>]) -> RgbImage {
             .collect::<Vec<_>>(),
     );
 
-    let ds = d / 2.0f64.sqrt();
-    let cs = c * c / 2.0;
     for px in (0..=BOX_SEP * (max + 1)).rev() {
         let x = px as f64 / BOX_SEP as f64;
-        let y = cs / (x - ds) + ds;
+        let y = c * c / (x - d) + d;
         if y >= 0.0 {
             let py = (y * BOX_SEP as f64).round() as usize;
             img.put_pixel(px as u32, py as u32, [255, 255, 255].into());
@@ -459,10 +479,12 @@ fn draw_table(table: &[Vec<usize>]) -> RgbImage {
     img
 }
 
-fn show_all(sz: usize) {
+/// Displays information about all paths of the given length in a human-readable
+/// format.
+fn show_all(len: usize) {
     let mut by_total_and_area = BTreeMap::<usize, BTreeMap<usize, Vec<Path>>>::new();
 
-    for_all_paths(sz, &mut |p| {
+    for_all_paths(len, &mut |p| {
         let a = p.area();
         let b = p.bounce();
         by_total_and_area
@@ -508,7 +530,7 @@ fn main() {
             let area = area.unwrap_or(tri(sz - 1) / 3 + 1);
             let mut counts = vec![0; tri(sz - 1) - area + 1];
             for_paths_with_area(sz, area, &mut |p| counts[p.bounce()] += 1);
-            let parts = calc_partitions(counts.len());
+            let parts = partition_numbers(counts.len());
 
             let seq2 = [
                 1, 3, 6, 11, 19, 31, 49, 75, 112, 164, 236, 334, 467, 645, 881, 1192, 1599, 2127,
@@ -531,8 +553,8 @@ fn main() {
             println!("\x1b[34m0 {:?}\x1b[m", part_diff);
             println!("\x1b[32m1 {:?}\x1b[m", seq2_diff);
         }
-        Opts::CountMinimal(CountMinimalOpts { start, end }) => {
-            count_minimal_partitions(start, end);
+        Opts::ShowMinimal(ShowMinimalOpts { start, end }) => {
+            show_minimal_partitions(start, end);
         }
         Opts::ShowAll(ShowAllOpts { sz }) => {
             show_all(sz);

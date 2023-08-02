@@ -9,7 +9,7 @@ pub enum Opts {
     CalcTable(CalcTableOpts),
     DrawTable(DrawTableOpts),
     CalcTableRow(CalcTableRowOpts),
-    CountMinimal(CountMinimalOpts),
+    ShowMinimal(ShowMinimalOpts),
     ShowAll(ShowAllOpts),
 }
 
@@ -38,7 +38,7 @@ pub struct CalcTableRowOpts {
 }
 
 #[derive(Debug, Options)]
-pub struct CountMinimalOpts {
+pub struct ShowMinimalOpts {
     #[options(free)]
     pub start: usize,
 
