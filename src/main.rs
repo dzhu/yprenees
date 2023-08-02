@@ -341,74 +341,95 @@ fn draw_table(table: &[Vec<usize>]) -> RgbImage {
     let text_style = TextStyle::new(&tamzen::FONT_5x9, BinaryColor::On);
 
     let mut min_locs = vec![];
+
+    // Draw cell contents.
     for area in 0..=max {
         for bounce in 0..=max - area {
-            if let Some(&n) = table.get(area).and_then(|m| m.get(bounce)) {
-                if n == 0 {
-                    continue;
-                }
-                let is_chain_start = area == 0
-                    || *table
-                        .get(area - 1)
-                        .and_then(|m| m.get(bounce + 1))
-                        .unwrap_or(&0)
-                        != n
-                    || bounce == 0
-                    || *table
-                        .get(area + 1)
-                        .and_then(|m| m.get(bounce - 1))
-                        .unwrap_or(&0)
-                        != n;
-                let is_partition = n == partitions[max - (bounce + area)];
+            let n = table[area][bounce];
+            if n == 0 {
+                continue;
+            }
 
-                let box_color = match (is_chain_start, is_partition) {
-                    (true, true) => [0, 70, 100],
-                    (true, false) => [0, 50, 0],
-                    (false, true) => [0, 0, 80],
-                    (false, false) => [0, 0, 0],
-                };
+            let is_chain_start = area == 0
+                || table[area - 1][bounce + 1] != n
+                || bounce == 0
+                || table[area + 1][bounce - 1] != n;
+            let is_partition = n == partitions[max - (bounce + area)];
+            if (area, bounce) == (max / 3 + 1, max / 3 + 1) {
+                assert!(!is_chain_start);
+            }
 
-                if (area, bounce) == (max / 3 + 1, max / 3 + 1) {
-                    assert!(!is_chain_start)
-                }
+            let box_color = match (is_chain_start, is_partition) {
+                (true, true) => [0, 70, 100],
+                (true, false) => [0, 50, 0],
+                (false, true) => [0, 0, 80],
+                (false, false) => [0, 0, 0],
+            };
 
-                drawing::draw_filled_rect_mut(
-                    &mut img,
-                    Rect::at((BOX_SEP * area) as _, (BOX_SEP * bounce) as _)
-                        .of_size(BOX_SEP as _, BOX_SEP as _),
-                    if (area, bounce) == (max / 3 + 1, max / 3 + 1) {
-                        [200, 0, 200]
-                    } else {
-                        box_color
-                    }
-                    .into(),
-                );
+            drawing::draw_filled_rect_mut(
+                &mut img,
+                Rect::at((BOX_SEP * area) as _, (BOX_SEP * bounce) as _)
+                    .of_size(BOX_SEP as _, BOX_SEP as _),
+                box_color.into(),
+            );
 
-                let s = format!("{}", n as isize);
-                let x = (BOX_SEP * area + BOX_SEP / 2) as i32 + 1;
-                let y = (BOX_SEP * bounce + BOX_SEP / 2) as i32 + 1;
-                let pos = Point::new(x, y);
-                let metrics = text_style.measure_string(&s, pos, Baseline::Middle);
-                Text::new(&s, pos - metrics.bounding_box.size / 2, text_style)
-                    .draw(&mut draw::ImageDrawTargetWrapper::new(&mut img, text_color))
-                    .unwrap();
+            let s = format!("{}", n as isize);
+            let x = (BOX_SEP * area + BOX_SEP / 2) as i32 + 1;
+            let y = (BOX_SEP * bounce + BOX_SEP / 2) as i32 + 1;
+            let pos = Point::new(x, y);
+            let metrics = text_style.measure_string(&s, pos, Baseline::Middle);
+            Text::new(&s, pos - metrics.bounding_box.size / 2, text_style)
+                .draw(&mut draw::ImageDrawTargetWrapper::new(&mut img, text_color))
+                .unwrap();
 
-                if area == 0
-                    || bounce == 0
-                    || table[area - 1][bounce] == 0
-                    || table[area][bounce - 1] == 0
-                {
-                    min_locs.push((area, bounce));
-                }
+            if area == 0
+                || bounce == 0
+                || table[area - 1][bounce] == 0
+                || table[area][bounce - 1] == 0
+            {
+                min_locs.push((area, bounce));
             }
         }
     }
 
+    // Draw grid.
     for i in 0..=max + 1 {
         let p0 = ((BOX_SEP * i) as f32, 0.0);
         let p1 = ((BOX_SEP * i) as f32, (BOX_SEP * (max + 2 - i)) as f32);
         drawing::draw_line_segment_mut(&mut img, p0, p1, line_color);
         drawing::draw_line_segment_mut(&mut img, (p0.1, p0.0), (p1.1, p1.0), line_color);
+    }
+
+    // Draw miniature heat map.
+    let max_val = *table.iter().flat_map(|row| row.iter()).max().unwrap();
+    if max_val > 1 {
+        fn color_map(x: f32) -> [u8; 3] {
+            const C0: [u8; 3] = [0, 0, 128];
+            const C1: [u8; 3] = [200, 200, 128];
+
+            let interp = |a: f32, b: f32| (a + x * (b - a)) as u8;
+            [0, 1, 2].map(|i| interp(C0[i] as _, C1[i] as _))
+        }
+
+        const SUB_SEP: usize = BOX_SEP / 2;
+        let base = (BOX_SEP - SUB_SEP) * (max + 1) + 1;
+        for (area, row) in table.iter().enumerate() {
+            for (bounce, &n) in row.iter().enumerate() {
+                if n == 0 {
+                    continue;
+                }
+                let rel_val = (n as f32).log(max_val as f32);
+                drawing::draw_filled_rect_mut(
+                    &mut img,
+                    Rect::at(
+                        (base + (SUB_SEP * area)) as _,
+                        (base + (SUB_SEP * bounce)) as _,
+                    )
+                    .of_size(SUB_SEP as _, SUB_SEP as _),
+                    color_map(rel_val).into(),
+                );
+            }
+        }
     }
 
     min_locs.sort_by_key(|&(a, b)| (a, Reverse(b)));
