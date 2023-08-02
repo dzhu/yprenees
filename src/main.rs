@@ -4,7 +4,6 @@ use std::{
     fmt::{Display, Error, Formatter},
     fs::File,
     iter, mem,
-    path::PathBuf,
 };
 
 use bitmap_font::{tamzen, TextStyle};
@@ -19,54 +18,7 @@ use image::RgbImage;
 use imageproc::{drawing, rect::Rect};
 
 mod draw;
-
-#[derive(Debug, Options)]
-enum Opts {
-    CalcTable(CalcTableOpts),
-    DrawTable(DrawTableOpts),
-    CalcTableRow(CalcTableRowOpts),
-    CountMinimal(CountMinimalOpts),
-    ShowAll(ShowAllOpts),
-}
-
-#[derive(Debug, Options)]
-struct CalcTableOpts {
-    #[options(free)]
-    sz: usize,
-}
-
-#[derive(Debug, Options)]
-struct DrawTableOpts {
-    #[options(free)]
-    in_path: PathBuf,
-
-    #[options(free)]
-    out_path: PathBuf,
-}
-
-#[derive(Debug, Options)]
-struct CalcTableRowOpts {
-    #[options(free)]
-    sz: usize,
-
-    #[options(free)]
-    area: Option<usize>,
-}
-
-#[derive(Debug, Options)]
-struct CountMinimalOpts {
-    #[options(free)]
-    start: usize,
-
-    #[options(free)]
-    end: usize,
-}
-
-#[derive(Debug, Options)]
-struct ShowAllOpts {
-    #[options(free)]
-    sz: usize,
-}
+mod opts;
 
 #[derive(Clone, Debug)]
 struct Path {
@@ -552,6 +504,7 @@ fn show_all(sz: usize) {
 }
 
 fn main() {
+    use crate::opts::*;
     let opts = Opts::parse_args_default_or_exit();
 
     match opts {
