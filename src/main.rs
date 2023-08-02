@@ -127,7 +127,7 @@ impl Display for Path {
 }
 
 fn for_all_paths<F: FnMut(&Path)>(sz: usize, cb: &mut F) {
-    fn helper<F: FnMut(&Path)>(sz: usize, cur: &mut Vec<usize>, cb: &mut F) {
+    fn helper<F: FnMut(&Path)>(sz: usize, last: usize, cur: &mut Vec<usize>, cb: &mut F) {
         if cur.len() == sz - 1 {
             let path = Path {
                 partition: mem::take(cur),
@@ -140,19 +140,25 @@ fn for_all_paths<F: FnMut(&Path)>(sz: usize, cb: &mut F) {
             return;
         }
         let i = cur.len();
-        let lim = cur.last().cloned().unwrap_or(sz).min(sz - i - 1);
+        let lim = last.min(sz - i - 1);
         for h in 0..=lim {
             cur.push(h);
-            helper(sz, cur, cb);
+            helper(sz, h, cur, cb);
             cur.pop();
         }
     }
 
-    helper(sz, &mut vec![], cb);
+    helper(sz, sz, &mut vec![], cb);
 }
 
 fn for_paths_with_area<F: FnMut(&Path)>(sz: usize, area: usize, cb: &mut F) {
-    fn helper<F: FnMut(&Path)>(sz: usize, remaining: usize, cur: &mut Vec<usize>, cb: &mut F) {
+    fn helper<F: FnMut(&Path)>(
+        sz: usize,
+        last: usize,
+        remaining: usize,
+        cur: &mut Vec<usize>,
+        cb: &mut F,
+    ) {
         if cur.len() == sz - 1 {
             if remaining == 0 {
                 let path = Path {
@@ -168,20 +174,15 @@ fn for_paths_with_area<F: FnMut(&Path)>(sz: usize, area: usize, cb: &mut F) {
         }
         let i = cur.len();
         let min = if remaining == 0 { 0 } else { 1 };
-        let max = cur
-            .last()
-            .cloned()
-            .unwrap_or(sz)
-            .min(sz - i - 1)
-            .min(remaining);
+        let max = last.min(sz - i - 1).min(remaining);
         for h in min..=max {
             cur.push(h);
-            helper(sz, remaining - h, cur, cb);
+            helper(sz, h, remaining - h, cur, cb);
             cur.pop();
         }
     }
 
-    helper(sz, tri(sz - 1) - area, &mut vec![], cb);
+    helper(sz, sz, tri(sz - 1) - area, &mut vec![], cb);
 }
 
 fn calc_partitions(end: usize) -> Vec<usize> {
