@@ -3,7 +3,7 @@ use std::{
     collections::BTreeMap,
     fmt::{Display, Error, Formatter},
     fs::File,
-    iter, mem,
+    mem,
 };
 
 use bitmap_font::{tamzen, TextStyle};
@@ -275,7 +275,7 @@ fn calc_table(sz: usize) -> Vec<Vec<usize>> {
     table
 }
 
-fn fit_hyperbola(pts: &[(f64, f64)]) -> (f64, f64, Vec<(f64, f64)>) {
+fn fit_hyperbola(pts: &[(f64, f64)]) -> (f64, f64) {
     let s2 = 1.0 / 2.0f64.sqrt();
     let n = pts.len() as f64;
     let pts: Vec<_> = pts
@@ -297,26 +297,7 @@ fn fit_hyperbola(pts: &[(f64, f64)]) -> (f64, f64, Vec<(f64, f64)>) {
         c -= delta_c;
         d = d2;
     }
-
-    const N: usize = 4;
-    let out_xs = pts
-        .iter()
-        .zip(pts.iter().skip(1))
-        .flat_map(|(&(x0, _), &(x1, _))| {
-            (0..N).map(move |i| (x0 + i as f64 * (x1 - x0) / N as f64))
-        })
-        .chain(iter::once(pts.last().unwrap().0));
-
-    (
-        c,
-        d,
-        out_xs
-            .map(|x| {
-                let y = c.hypot(x) + d;
-                ((x + y) * s2, (y - x) * s2)
-            })
-            .collect(),
-    )
+    (c, d)
 }
 
 fn draw_table(table: &[Vec<usize>]) -> RgbImage {
@@ -430,22 +411,27 @@ fn draw_table(table: &[Vec<usize>]) -> RgbImage {
     }
 
     // Draw hyperbola fitted to boundary of table.
-    let (c, d, pts) = fit_hyperbola(
+    let (c, d) = fit_hyperbola(
         &min_locs
             .iter()
             .map(|&(x, y)| (x as f64, y as f64))
             .collect::<Vec<_>>(),
     );
 
-    let to_img = |(x, y): (f64, f64)| {
-        (
-            (BOX_SEP as f64 * x).round() as f32,
-            (BOX_SEP as f64 * y).round() as f32,
-        )
-    };
+    let ds = d / 2.0f64.sqrt();
+    let cs = c * c / 2.0;
+    for px in (0..=BOX_SEP * (max + 1)).rev() {
+        let x = px as f64 / BOX_SEP as f64;
+        let y = cs / (x - ds) + ds;
+        if y >= 0.0 {
+            let py = (y * BOX_SEP as f64).round() as usize;
+            img.put_pixel(px as u32, py as u32, [255, 255, 255].into());
+            img.put_pixel(py as u32, px as u32, [255, 255, 255].into());
 
-    for (&p, &q) in pts.iter().zip(pts.iter().skip(1)) {
-        drawing::draw_line_segment_mut(&mut img, to_img(p), to_img(q), [255, 255, 255].into());
+            if py >= px {
+                break;
+            }
+        }
     }
 
     let text_style = TextStyle::new(
@@ -457,8 +443,8 @@ fn draw_table(table: &[Vec<usize>]) -> RgbImage {
         BinaryColor::On,
     );
     let ss = [
-        format!("vert_dist = {c:5.2}"),
-        format!("cent_ofs = {d:5.2}"),
+        format!("semi major:  {:5.2}", c * 2.0f64.sqrt()),
+        format!("center dist: {:5.2}", -d * 2.0f64.sqrt()),
     ];
     let mut y = 1;
     for s in ss {
