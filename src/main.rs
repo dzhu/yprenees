@@ -2,7 +2,9 @@ use std::{
     cmp::Reverse,
     collections::BTreeMap,
     fmt::{Display, Error, Formatter},
+    fs::File,
     mem,
+    path::PathBuf,
 };
 
 use bitmap_font::{tamzen, TextStyle};
@@ -20,15 +22,35 @@ mod draw;
 
 #[derive(Debug, Options)]
 enum Opts {
+    CalcTable(CalcTableOpts),
     DrawTable(DrawTableOpts),
+    CalcTableRow(CalcTableRowOpts),
     CountMinimal(CountMinimalOpts),
     ShowAll(ShowAllOpts),
 }
 
 #[derive(Debug, Options)]
-struct DrawTableOpts {
+struct CalcTableOpts {
     #[options(free)]
     sz: usize,
+}
+
+#[derive(Debug, Options)]
+struct DrawTableOpts {
+    #[options(free)]
+    in_path: PathBuf,
+
+    #[options(free)]
+    out_path: PathBuf,
+}
+
+#[derive(Debug, Options)]
+struct CalcTableRowOpts {
+    #[options(free)]
+    sz: usize,
+
+    #[options(free)]
+    area: Option<usize>,
 }
 
 #[derive(Debug, Options)]
@@ -127,6 +149,39 @@ fn for_all_paths<F: FnMut(&Path)>(sz: usize, cb: &mut F) {
     }
 
     helper(sz, &mut vec![], cb);
+}
+
+fn for_paths_with_area<F: FnMut(&Path)>(sz: usize, area: usize, cb: &mut F) {
+    fn helper<F: FnMut(&Path)>(sz: usize, remaining: usize, cur: &mut Vec<usize>, cb: &mut F) {
+        if cur.len() == sz - 1 {
+            if remaining == 0 {
+                let path = Path {
+                    partition: mem::take(cur),
+                };
+                cb(&path);
+                let Path {
+                    partition: mut path,
+                } = path;
+                mem::swap(&mut path, cur);
+            }
+            return;
+        }
+        let i = cur.len();
+        let min = if remaining == 0 { 0 } else { 1 };
+        let max = cur
+            .last()
+            .cloned()
+            .unwrap_or(sz)
+            .min(sz - i - 1)
+            .min(remaining);
+        for h in min..=max {
+            cur.push(h);
+            helper(sz, remaining - h, cur, cb);
+            cur.pop();
+        }
+    }
+
+    helper(sz, tri(sz - 1) - area, &mut vec![], cb);
 }
 
 fn calc_partitions(end: usize) -> Vec<usize> {
@@ -258,21 +313,24 @@ fn count_minimal_partitions(start: usize, end: usize) {
     }
 }
 
-fn draw_ab_counts(sz: usize) -> RgbImage {
+fn calc_table(sz: usize) -> Vec<Vec<usize>> {
+    let max = tri(sz - 1);
+    let mut table: Vec<_> = (1..=max + 1).rev().map(|n| vec![0; n]).collect();
+    for_all_paths(sz, &mut |p| {
+        table[p.area()][p.bounce()] += 1;
+    });
+    table
+}
+
+fn draw_table(table: &[Vec<usize>]) -> RgbImage {
     const BOX_SEP: usize = 22;
 
-    let mut by_area_and_bounce = BTreeMap::<usize, BTreeMap<usize, usize>>::new();
-    for_all_paths(sz, &mut |p| {
-        let a = p.area();
-        let b = p.bounce();
-        *by_area_and_bounce
-            .entry(a)
-            .or_default()
-            .entry(b)
-            .or_default() += 1;
-    });
+    assert!(table
+        .iter()
+        .enumerate()
+        .all(|(i, row)| i + row.len() == table.len()));
+    let max = table.len() - 1;
 
-    let max = tri(sz - 1);
     let partitions = calc_partitions(max);
     let img_dim = (BOX_SEP * (max + 1) + 1) as u32;
 
@@ -280,22 +338,25 @@ fn draw_ab_counts(sz: usize) -> RgbImage {
 
     let line_color = [64, 64, 64].into();
     let text_color = [255, 255, 255].into();
-    let text_style = TextStyle::new(&tamzen::FONT_6x12, BinaryColor::On);
+    let text_style = TextStyle::new(&tamzen::FONT_5x9, BinaryColor::On);
 
     let mut min_locs = vec![];
     for area in 0..=max {
         for bounce in 0..=max - area {
-            if let Some(&n) = by_area_and_bounce.get(&area).and_then(|m| m.get(&bounce)) {
+            if let Some(&n) = table.get(area).and_then(|m| m.get(bounce)) {
+                if n == 0 {
+                    continue;
+                }
                 let is_chain_start = area == 0
-                    || *by_area_and_bounce
-                        .get(&(area - 1))
-                        .and_then(|m| m.get(&(bounce + 1)))
+                    || *table
+                        .get(area - 1)
+                        .and_then(|m| m.get(bounce + 1))
                         .unwrap_or(&0)
                         != n
                     || bounce == 0
-                    || *by_area_and_bounce
-                        .get(&(area + 1))
-                        .and_then(|m| m.get(&(bounce - 1)))
+                    || *table
+                        .get(area + 1)
+                        .and_then(|m| m.get(bounce - 1))
                         .unwrap_or(&0)
                         != n;
                 let is_partition = n == partitions[max - (bounce + area)];
@@ -307,17 +368,23 @@ fn draw_ab_counts(sz: usize) -> RgbImage {
                     (false, false) => [0, 0, 0],
                 };
 
+                if (area, bounce) == (max / 3 + 1, max / 3 + 1) {
+                    assert!(!is_chain_start)
+                }
+
                 drawing::draw_filled_rect_mut(
                     &mut img,
                     Rect::at((BOX_SEP * area) as _, (BOX_SEP * bounce) as _)
                         .of_size(BOX_SEP as _, BOX_SEP as _),
-                    box_color.into(),
+                    if (area, bounce) == (max / 3 + 1, max / 3 + 1) {
+                        [200, 0, 200]
+                    } else {
+                        box_color
+                    }
+                    .into(),
                 );
 
-                let s = format!(
-                    "{}",
-                    n as isize - partitions[max - (bounce + area)] as isize
-                );
+                let s = format!("{}", n as isize);
                 let x = (BOX_SEP * area + BOX_SEP / 2) as i32 + 1;
                 let y = (BOX_SEP * bounce + BOX_SEP / 2) as i32 + 1;
                 let pos = Point::new(x, y);
@@ -327,15 +394,9 @@ fn draw_ab_counts(sz: usize) -> RgbImage {
                     .unwrap();
 
                 if area == 0
-                    || by_area_and_bounce
-                        .get(&(area - 1))
-                        .and_then(|m| m.get(&bounce))
-                        .is_none()
                     || bounce == 0
-                    || by_area_and_bounce
-                        .get(&area)
-                        .and_then(|m| m.get(&(bounce - 1)))
-                        .is_none()
+                    || table[area - 1][bounce] == 0
+                    || table[area][bounce - 1] == 0
                 {
                     min_locs.push((area, bounce));
                 }
@@ -392,10 +453,42 @@ fn main() {
     let opts = Opts::parse_args_default_or_exit();
 
     match opts {
-        Opts::DrawTable(DrawTableOpts { sz }) => {
-            let img = draw_ab_counts(sz);
-            img.save("/tmp/peaks.png").unwrap();
-            img.save(format!("/tmp/peaks{sz:02}.png")).unwrap();
+        Opts::CalcTable(CalcTableOpts { sz }) => {
+            println!("{}", serde_json::to_string(&calc_table(sz)).unwrap());
+        }
+        Opts::DrawTable(DrawTableOpts { in_path, out_path }) => {
+            let table: Vec<Vec<usize>> = {
+                let f = File::open(in_path).unwrap();
+                serde_json::from_reader(f).unwrap()
+            };
+            draw_table(&table).save(out_path).unwrap();
+        }
+        Opts::CalcTableRow(CalcTableRowOpts { sz, area }) => {
+            let area = area.unwrap_or(tri(sz - 1) / 3 + 1);
+            let mut counts = vec![0; tri(sz - 1) - area + 1];
+            for_paths_with_area(sz, area, &mut |p| counts[p.bounce()] += 1);
+            let parts = calc_partitions(counts.len());
+
+            let seq2 = [
+                1, 3, 6, 11, 19, 31, 49, 75, 112, 164, 236, 334, 467, 645, 881, 1192, 1599, 2127,
+                2809, 3684, 4801,
+            ];
+
+            let part_diff: Vec<_> = parts
+                .iter()
+                .zip(counts.iter().rev())
+                .map(|(&p, &n)| p as isize - n as isize)
+                .collect();
+
+            let seq2_diff: Vec<_> = part_diff
+                .iter()
+                .skip(sz - 2)
+                .zip(seq2.iter())
+                .map(|(&p, &n)| p - n as isize)
+                .collect();
+            println!("{counts:?}");
+            println!("\x1b[34m0 {:?}\x1b[m", part_diff);
+            println!("\x1b[32m1 {:?}\x1b[m", seq2_diff);
         }
         Opts::CountMinimal(CountMinimalOpts { start, end }) => {
             count_minimal_partitions(start, end);
