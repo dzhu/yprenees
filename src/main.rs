@@ -17,6 +17,7 @@ use gumdrop::Options;
 use image::RgbImage;
 use imageproc::{drawing, rect::Rect};
 
+mod color_maps;
 mod draw;
 mod opts;
 
@@ -404,11 +405,7 @@ fn draw_table(table: &[Vec<usize>]) -> RgbImage {
     let max_val = *table.iter().flat_map(|row| row.iter()).max().unwrap();
     if max_val > 1 {
         fn color_map(x: f32) -> [u8; 3] {
-            const C0: [u8; 3] = [0, 0, 128];
-            const C1: [u8; 3] = [200, 200, 128];
-
-            let interp = |a: f32, b: f32| (a + x * (b - a)) as u8;
-            [0, 1, 2].map(|i| interp(C0[i] as _, C1[i] as _))
+            color_maps::L16[((x * 255.0).round() as usize).clamp(0, 255)]
         }
 
         const SUB_SEP: usize = BOX_SEP / 2;
