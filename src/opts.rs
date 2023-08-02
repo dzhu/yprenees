@@ -9,6 +9,7 @@ pub enum Opts {
     CalcTable(CalcTableOpts),
     DrawTable(DrawTableOpts),
     CalcTableRow(CalcTableRowOpts),
+    CalcAlmostMinimalLine(CalcAlmostMinimalLineOpts),
     ShowMinimal(ShowMinimalOpts),
     ShowAll(ShowAllOpts),
 }
@@ -35,6 +36,12 @@ pub struct CalcTableRowOpts {
 
     #[options(free)]
     pub area: Option<usize>,
+}
+
+#[derive(Debug, Options)]
+pub struct CalcAlmostMinimalLineOpts {
+    #[options(free)]
+    pub n: usize,
 }
 
 #[derive(Debug, Options)]

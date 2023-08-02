@@ -127,15 +127,15 @@ fn for_paths_with_area<F: FnMut(&Path)>(len: usize, area: usize, cb: &mut F) {
         cur: &mut Vec<usize>,
         cb: &mut F,
     ) {
-        if cur.len() == sz - 1 {
+        let cols_left = sz - 1 - cur.len();
+        if cols_left == 0 {
             if remaining == 0 {
                 call_path_cb(cur, cb);
             }
             return;
         }
-        let i = cur.len();
-        let min = if remaining == 0 { 0 } else { 1 };
-        let max = last.min(sz - i - 1).min(remaining);
+        let min = (remaining + cols_left - 1) / cols_left;
+        let max = last.min(sz - cur.len() - 1).min(remaining);
         for h in min..=max {
             cur.push(h);
             helper(sz, h, remaining - h, cur, cb);
@@ -144,6 +144,79 @@ fn for_paths_with_area<F: FnMut(&Path)>(len: usize, area: usize, cb: &mut F) {
     }
 
     helper(len, len, tri(len - 1) - area, &mut vec![], cb);
+}
+
+/// Calls `cb` on each [`Path`] of the given length, area, and bounce.
+fn for_paths_with_area_and_bounce<F: FnMut(&Path)>(
+    len: usize,
+    area: usize,
+    bounce: usize,
+    cb: &mut F,
+) {
+    fn min_top_bounce(bounce: usize) -> usize {
+        (0..).find(|&i| tri(i) >= bounce).unwrap()
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn helper<F: FnMut(&Path)>(
+        sz: usize,
+        last: usize,
+        rem_area: usize,
+        next_bounce_ind: usize,
+        rem_bounce: usize,
+        bounce_min: usize,
+        cur: &mut Vec<usize>,
+        cb: &mut F,
+    ) {
+        let cols_left = sz - 1 - cur.len();
+        if cols_left == 0 {
+            if rem_area == 0 && rem_bounce == 0 {
+                call_path_cb(cur, cb);
+            }
+            return;
+        }
+        let min = bounce_min.max((rem_area + cols_left - 1) / cols_left);
+        let mut max = last.min(sz - cur.len() - 1).min(rem_area);
+
+        let is_bounce = cur.len() == next_bounce_ind;
+        if is_bounce {
+            max = max.min(rem_bounce);
+        }
+
+        for h in min..=max {
+            let next_bounce_ind = if is_bounce { sz - h } else { next_bounce_ind };
+            let rem_bounce = rem_bounce - if is_bounce { h } else { 0 };
+            let bounce_min = if is_bounce && h > 0 {
+                min_top_bounce(rem_bounce)
+            } else {
+                bounce_min
+            };
+
+            cur.push(h);
+            helper(
+                sz,
+                h,
+                rem_area - h,
+                next_bounce_ind,
+                rem_bounce,
+                bounce_min,
+                cur,
+                cb,
+            );
+            cur.pop();
+        }
+    }
+
+    helper(
+        len,
+        len,
+        tri(len - 1) - area,
+        0,
+        bounce,
+        min_top_bounce(bounce),
+        &mut vec![],
+        cb,
+    );
 }
 
 /// Computes the number of partitions of each integer from 0 to `end` (inclusive).
@@ -550,6 +623,20 @@ fn main() {
             println!("\x1b[34m0 {:?}\x1b[m", part_diff);
             println!("\x1b[32m1 {:?}\x1b[m", seq2_diff);
         }
+        Opts::CalcAlmostMinimalLine(CalcAlmostMinimalLineOpts { n }) => {
+            let len = tri(n);
+            let tetra = (1..n).map(tri).sum::<usize>();
+            let sum = 2 * tetra + 1;
+            println!("sum: {sum}");
+            for a in tetra + 1..=sum {
+                let b = sum - a;
+                let mut n = 0;
+                let t0 = std::time::Instant::now();
+                for_paths_with_area_and_bounce(len, a, b, &mut |_| n += 1);
+                println!("{a} {b} {n} {:?}", t0.elapsed());
+            }
+        }
+
         Opts::ShowMinimal(ShowMinimalOpts { start, end }) => {
             show_minimal_partitions(start, end);
         }
