@@ -221,24 +221,27 @@ fn for_paths_with_area_and_bounce<F: FnMut(&Path)>(
 
 /// Computes the number of partitions of each integer from 0 to `end` (inclusive).
 fn partition_numbers(end: usize) -> Vec<usize> {
-    // nums[n][k] is the number of partitions of n with largest part k.
-    let mut nums = vec![vec![1]];
-    for n in 1..=end {
-        nums.push(
-            (0..=n)
-                .map(|k| {
-                    if k == 0 {
-                        0
-                    } else {
-                        (0..=k).map(|j| nums[n - k].get(j).unwrap_or(&0)).sum()
-                    }
-                })
-                .collect(),
-        );
+    // The implementation uses the recurrence given by the pentagonal number
+    // theorem.
+    fn penta(n: isize) -> usize {
+        (n * (3 * n - 1) / 2) as _
     }
-    nums.into_iter()
-        .map(|row| row.into_iter().sum::<usize>())
-        .collect()
+
+    let mut ret = vec![1];
+
+    for n in 1..=end {
+        let mut val = 0;
+        for k in 2.. {
+            let p = penta((k >> 1) * (if k % 2 == 0 { 1 } else { -1 }));
+            if p > n {
+                break;
+            }
+            val += ret[n - p] as isize * if k & 2 == 0 { -1 } else { 1 };
+        }
+        assert!(val > 0);
+        ret.push(val as usize);
+    }
+    ret
 }
 
 /// Computes the nth triangular number.
