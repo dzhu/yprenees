@@ -101,49 +101,47 @@ fn call_path_cb<F: FnMut(&Path)>(part: &mut Vec<usize>, cb: &mut F) {
 
 /// Calls `cb` on each [`Path`] of the given length.
 fn for_all_paths<F: FnMut(&Path)>(len: usize, cb: &mut F) {
-    fn helper<F: FnMut(&Path)>(sz: usize, last: usize, cur: &mut Vec<usize>, cb: &mut F) {
-        if cur.len() == sz - 1 {
+    fn helper<F: FnMut(&Path)>(rem_cols: usize, last: usize, cur: &mut Vec<usize>, cb: &mut F) {
+        if rem_cols == 0 {
             call_path_cb(cur, cb);
             return;
         }
-        let i = cur.len();
-        let lim = last.min(sz - i - 1);
+        let lim = last.min(rem_cols);
         for h in 0..=lim {
             cur.push(h);
-            helper(sz, h, cur, cb);
+            helper(rem_cols - 1, h, cur, cb);
             cur.pop();
         }
     }
 
-    helper(len, len, &mut vec![], cb);
+    helper(len - 1, len, &mut vec![], cb);
 }
 
 /// Calls `cb` on each [`Path`] of the given length and area.
 fn for_paths_with_area<F: FnMut(&Path)>(len: usize, area: usize, cb: &mut F) {
     fn helper<F: FnMut(&Path)>(
-        sz: usize,
+        rem_cols: usize,
         last: usize,
-        remaining: usize,
+        rem_area: usize,
         cur: &mut Vec<usize>,
         cb: &mut F,
     ) {
-        let cols_left = sz - 1 - cur.len();
-        if cols_left == 0 {
-            if remaining == 0 {
+        if rem_cols == 0 {
+            if rem_area == 0 {
                 call_path_cb(cur, cb);
             }
             return;
         }
-        let min = (remaining + cols_left - 1) / cols_left;
-        let max = last.min(sz - cur.len() - 1).min(remaining);
+        let min = (rem_area + rem_cols - 1) / rem_cols;
+        let max = last.min(rem_cols).min(rem_area);
         for h in min..=max {
             cur.push(h);
-            helper(sz, h, remaining - h, cur, cb);
+            helper(rem_cols - 1, h, rem_area - h, cur, cb);
             cur.pop();
         }
     }
 
-    helper(len, len, tri(len - 1) - area, &mut vec![], cb);
+    helper(len - 1, len, tri(len - 1) - area, &mut vec![], cb);
 }
 
 /// Calls `cb` on each [`Path`] of the given length, area, and bounce.
@@ -168,15 +166,15 @@ fn for_paths_with_area_and_bounce<F: FnMut(&Path)>(
         cur: &mut Vec<usize>,
         cb: &mut F,
     ) {
-        let cols_left = sz - 1 - cur.len();
-        if cols_left == 0 {
+        let rem_cols = sz - 1 - cur.len();
+        if rem_cols == 0 {
             if rem_area == 0 && rem_bounce == 0 {
                 call_path_cb(cur, cb);
             }
             return;
         }
-        let min = bounce_min.max((rem_area + cols_left - 1) / cols_left);
-        let mut max = last.min(sz - cur.len() - 1).min(rem_area);
+        let min = bounce_min.max((rem_area + rem_cols - 1) / rem_cols);
+        let mut max = last.min(rem_cols).min(rem_area);
 
         let is_bounce = cur.len() == next_bounce_ind;
         if is_bounce {
