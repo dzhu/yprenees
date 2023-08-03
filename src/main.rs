@@ -174,7 +174,7 @@ fn for_paths_with_area_and_bounce<F: FnMut(&Path)>(
             return;
         }
         let min = (bounce_min..)
-            .find(|n| n * rem_cols - tri(n - 1) >= rem_area)
+            .find(|n| n * rem_cols >= rem_area + tri(n.wrapping_sub(1)))
             .unwrap();
         let mut max = last.min(rem_cols).min(rem_area);
 
@@ -246,7 +246,7 @@ fn partition_numbers(end: usize) -> Vec<usize> {
 
 /// Computes the nth triangular number.
 fn tri(n: usize) -> usize {
-    n * (n + 1) / 2
+    n * n.wrapping_add(1) / 2
 }
 
 /// Finds partitions of `n` that may correspond to paths of length `n` with
@@ -645,6 +645,63 @@ fn main() {
         }
         Opts::ShowAll(ShowAllOpts { sz }) => {
             show_all(sz);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::*;
+
+    const EXHAUSTIVE_LIMIT: usize = 16;
+
+    #[test]
+    fn test_exhaustive() {
+        for len in 1..EXHAUSTIVE_LIMIT {
+            let table = calc_table(len);
+            let max = tri(len - 1);
+
+            // Check the shape and symmetry of the table in its own right.
+            assert_eq!(table.len(), max + 1);
+            for (a, row) in table.iter().enumerate() {
+                assert_eq!(row.len(), max + 1 - a);
+                for (b, _) in row.iter().enumerate() {
+                    assert_eq!(table[b][a], table[a][b]);
+                }
+            }
+
+            // Check per-row pruned search against the table.
+            for (a, ref_row) in table.iter().enumerate() {
+                let mut row = vec![0; max + 1 - a];
+                for_paths_with_area(len, a, &mut |p| row[p.bounce()] += 1);
+                assert_eq!(&row, ref_row);
+            }
+
+            // Check per-cell pruned search against the table.
+            for (a, row) in table.iter().enumerate() {
+                for (b, ref_count) in row.iter().enumerate() {
+                    let mut count = 0;
+                    for_paths_with_area_and_bounce(len, a, b, &mut |_| count += 1);
+                    assert_eq!(&count, ref_count);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_row() {
+        for len in EXHAUSTIVE_LIMIT..20 {
+            let max = tri(len - 1);
+            let area = max / 3 + 1;
+
+            let mut row = vec![0; max + 1 - area];
+            for_paths_with_area(len, area, &mut |p| row[p.bounce()] += 1);
+
+            for (bounce, ref_count) in row.iter().enumerate() {
+                let mut count = 0;
+                for_paths_with_area_and_bounce(len, area, bounce, &mut |_| count += 1);
+                assert_eq!(&count, ref_count);
+            }
         }
     }
 }
