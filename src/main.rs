@@ -132,7 +132,7 @@ fn for_paths_with_area<F: FnMut(&Path)>(len: usize, area: usize, cb: &mut F) {
             }
             return;
         }
-        let min = (rem_area + rem_cols - 1) / rem_cols;
+        let min = (0..).find(|n| n * rem_cols >= rem_area).unwrap();
         let max = last.min(rem_cols).min(rem_area);
         for h in min..=max {
             cur.push(h);
@@ -173,7 +173,9 @@ fn for_paths_with_area_and_bounce<F: FnMut(&Path)>(
             }
             return;
         }
-        let min = bounce_min.max((rem_area + rem_cols - 1) / rem_cols);
+        let min = (bounce_min..)
+            .find(|n| n * rem_cols - tri(n - 1) >= rem_area)
+            .unwrap();
         let mut max = last.min(rem_cols).min(rem_area);
 
         let is_bounce = cur.len() == next_bounce_ind;
