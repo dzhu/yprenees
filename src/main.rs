@@ -681,6 +681,11 @@ fn main() {
             println!("\x1b[34m0 {:?}\x1b[m", part_diff);
             println!("\x1b[32m1 {:?}\x1b[m", seq2_diff);
         }
+        Opts::CalcTableCell(CalcTableCellOpts { len, area, bounce }) => {
+            let mut n = 0;
+            for_paths_with_area_and_bounce(len, area, bounce, &mut |_| n += 1);
+            println!("{len} {area} {bounce} {n}");
+        }
         Opts::CalcAlmostMinimalLine(CalcAlmostMinimalLineOpts { n }) => {
             let len = tri(n);
             let tetra = (1..n).map(tri).sum::<usize>();
