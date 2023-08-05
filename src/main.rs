@@ -244,6 +244,38 @@ fn partition_numbers(end: usize) -> Vec<usize> {
     ret
 }
 
+/// Calculates the number of partitions of each integer from 0 to `a` * `b` that
+/// fit in an `a`-by-`b` box.
+fn restricted_partition_numbers(a: usize, b: usize) -> Vec<usize> {
+    // Compute the Gaussian binomial coefficient [a + b // a]_q, whose
+    // polynomial coefficients are exactly the desired numbers of partitions,
+    // using the q-analog of Pascal's rule.
+    //
+    // Each line is a diagonal line in Pascal's triangle parallel to the right
+    // side, which allows us to compute one row fully from the previous one and
+    // then throw out the old one.
+    //
+    // This could instead take advantage of the symmetry of the coefficients to
+    // potentially do less work, but the code is simpler this way and it's
+    // plenty fast already.
+    let mut line = vec![vec![1]; a + 1];
+    for _n_minus_k in 1..=b {
+        let mut line2 = vec![vec![1]];
+        for k in 1..=a {
+            let right = &line[k];
+            let left = &line2[k - 1];
+            line2.push(
+                (0..right.len() + k)
+                    .map(|i| if i >= k { right[i - k] } else { 0 } + left.get(i).unwrap_or(&0))
+                    .collect(),
+            );
+        }
+        line = line2;
+    }
+
+    line.pop().unwrap()
+}
+
 /// Computes the nth triangular number.
 fn tri(n: usize) -> usize {
     n * n.wrapping_add(1) / 2
@@ -408,7 +440,6 @@ fn draw_table(table: &[Vec<usize>]) -> RgbImage {
         .all(|(i, row)| i + row.len() == table.len()));
     let max = table.len() - 1;
 
-    let partitions = partition_numbers(max);
     let img_dim = (BOX_SEP * (max + 1) + 1) as u32;
 
     let mut img = RgbImage::new(img_dim, img_dim);
@@ -418,6 +449,14 @@ fn draw_table(table: &[Vec<usize>]) -> RgbImage {
     let text_style = TextStyle::new(&tamzen::FONT_5x9, BinaryColor::On);
 
     let mut min_locs = vec![];
+
+    let sz = (1..).find(|n| tri(n - 1) >= max).unwrap();
+    assert_eq!(tri(sz - 1), max);
+    let restricted_partitions = if sz >= 3 {
+        restricted_partition_numbers(sz - 3, sz - 2)
+    } else {
+        vec![]
+    };
 
     // Draw cell contents.
     for area in 0..=max {
@@ -431,12 +470,13 @@ fn draw_table(table: &[Vec<usize>]) -> RgbImage {
                 || table[area - 1][bounce + 1] != n
                 || bounce == 0
                 || table[area + 1][bounce - 1] != n;
-            let is_partition = n == partitions[max - (bounce + area)];
+            let is_restricted_partition =
+                Some(&n) == restricted_partitions.get(max - (bounce + area));
             if (area, bounce) == (max / 3 + 1, max / 3 + 1) {
                 assert!(!is_chain_start);
             }
 
-            let box_color = match (is_chain_start, is_partition) {
+            let box_color = match (is_chain_start, is_restricted_partition) {
                 (true, true) => [0, 70, 100],
                 (true, false) => [0, 50, 0],
                 (false, true) => [0, 0, 80],
@@ -716,6 +756,48 @@ mod tests {
                 let mut count = 0;
                 for_paths_with_area_and_bounce(len, area, bounce, &mut |_| count += 1);
                 assert_eq!(&count, ref_count);
+            }
+        }
+    }
+
+    #[test]
+    fn test_restricted_partition() {
+        fn restricted_partition_numbers_ref(a: usize, b: usize) -> Vec<usize> {
+            let mut ret = vec![0; a * b + 1];
+            fn helper(rem_cols: usize, last: usize, cur: usize, counts: &mut Vec<usize>) {
+                if rem_cols == 0 {
+                    counts[cur] += 1;
+                    return;
+                }
+                for h in 0..=last {
+                    helper(rem_cols - 1, h, cur + h, counts);
+                }
+            }
+            helper(b, a, 0, &mut ret);
+            ret
+        }
+
+        fn do_test(a: usize, b: usize) {
+            let t0 = std::time::Instant::now();
+            let ref_val = restricted_partition_numbers_ref(a, b);
+            let ref_t = t0.elapsed();
+
+            let t0 = std::time::Instant::now();
+            let check_val = restricted_partition_numbers(a, b);
+            let check_t = t0.elapsed();
+
+            assert_eq!(ref_val, check_val, "{a} {b}");
+            println!("{a} {b} {ref_t:?} {check_t:?}");
+        }
+
+        for a in 0..14 {
+            for b in 0..14 {
+                do_test(a, b);
+            }
+        }
+        for a in 0..6 {
+            for b in 0..60 {
+                do_test(a, b);
             }
         }
     }
