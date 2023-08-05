@@ -450,14 +450,29 @@ fn draw_table(table: &[Vec<usize>]) -> RgbImage {
                 box_color.into(),
             );
 
-            let s = format!("{}", n as isize);
+            let s = format!("{}", n);
+            let num_lines = (s.len() - 1) / 4 + 1;
+            let line_len = (s.len() - 1) / num_lines + 1;
+
+            let line_height = text_style
+                .measure_string(&s, Point::new(0, 0), Baseline::Middle)
+                .bounding_box
+                .size
+                .height
+                - 2;
             let x = (BOX_SEP * area + BOX_SEP / 2) as i32 + 1;
-            let y = (BOX_SEP * bounce + BOX_SEP / 2) as i32 + 1;
-            let pos = Point::new(x, y);
-            let metrics = text_style.measure_string(&s, pos, Baseline::Middle);
-            Text::new(&s, pos - metrics.bounding_box.size / 2, text_style)
-                .draw(&mut draw::ImageDrawTargetWrapper::new(&mut img, text_color))
-                .unwrap();
+            let y = (BOX_SEP * bounce + BOX_SEP / 2 - line_height as usize * (num_lines - 1) / 2)
+                as i32
+                + 1;
+
+            for (i, line) in s.as_bytes().chunks(line_len).enumerate() {
+                let pos = Point::new(x, y + line_height as i32 * i as i32);
+                let line = std::str::from_utf8(line).unwrap();
+                let metrics = text_style.measure_string(line, pos, Baseline::Middle);
+                Text::new(line, pos - metrics.bounding_box.size / 2, text_style)
+                    .draw(&mut draw::ImageDrawTargetWrapper::new(&mut img, text_color))
+                    .unwrap();
+            }
 
             if (area == 0 || table[area - 1][bounce] == 0)
                 && (bounce == 0 || table[area][bounce - 1] == 0)
