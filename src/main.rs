@@ -1,6 +1,6 @@
 use std::{
     cmp::Reverse,
-    collections::BTreeMap,
+    collections::{BTreeMap, HashMap},
     fmt::{Display, Error, Formatter},
     fs::File,
     mem,
@@ -391,11 +391,30 @@ fn show_minimal_partitions(start: usize, end: usize) {
 
 /// Calculates the full area/bounce count table for paths of the given length.
 fn calc_table(len: usize) -> Vec<Vec<usize>> {
+    // Key: last column, area so far, bounce so far, next bounce location.
+    let mut counts: HashMap<_, _> = [((len - 1, 0, 0, 0), 1)].into_iter().collect();
+    for step in 0..len {
+        for ((last_col, area, bounce, bounce_loc), count) in mem::take(&mut counts) {
+            for next_col in 0..=last_col.min(len - 1 - step) {
+                let next_area = area + len - 1 - step - next_col;
+                let next_bounce = bounce + if step == bounce_loc { next_col } else { 0 };
+                let next_bounce_loc = if step == bounce_loc {
+                    len - next_col
+                } else {
+                    bounce_loc
+                };
+                *counts
+                    .entry((next_col, next_area, next_bounce, next_bounce_loc))
+                    .or_default() += count;
+            }
+        }
+    }
+
     let max = tri(len - 1);
     let mut table: Vec<_> = (1..=max + 1).rev().map(|n| vec![0; n]).collect();
-    for_all_paths(len, &mut |p| {
-        table[p.area()][p.bounce()] += 1;
-    });
+    for ((_, area, bounce, _), count) in counts {
+        table[area][bounce] += count;
+    }
     table
 }
 
@@ -804,6 +823,34 @@ mod tests {
             for b in 0..60 {
                 do_test(a, b);
             }
+        }
+    }
+
+    #[test]
+    fn test_calc_table() {
+        fn calc_table_slow(len: usize) -> Vec<Vec<usize>> {
+            let max = tri(len - 1);
+            let mut table: Vec<_> = (1..=max + 1).rev().map(|n| vec![0; n]).collect();
+            for_all_paths(len, &mut |p| {
+                table[p.area()][p.bounce()] += 1;
+            });
+            table
+        }
+
+        for len in 1..=16 {
+            println!("================ {len}");
+            let t0 = std::time::Instant::now();
+            let ref_val = calc_table_slow(len);
+            let ref_t = t0.elapsed();
+
+            let t0 = std::time::Instant::now();
+            let check_val = calc_table(len);
+            let check_t = t0.elapsed();
+            assert_eq!(ref_val, check_val, "{len}");
+            println!(
+                "{ref_t:?} {check_t:?} {r}",
+                r = check_t.as_secs_f64() / ref_t.as_secs_f64()
+            );
         }
     }
 }
