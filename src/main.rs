@@ -221,7 +221,7 @@ fn for_paths_with_area_and_bounce<F: FnMut(&Path)>(
 }
 
 /// Computes the number of partitions of each integer from 0 to `end` (inclusive).
-fn partition_numbers(end: usize) -> Vec<usize> {
+fn partition_numbers(end: usize) -> Vec<u128> {
     // The implementation uses the recurrence given by the pentagonal number
     // theorem.
     fn penta(n: isize) -> usize {
@@ -231,16 +231,16 @@ fn partition_numbers(end: usize) -> Vec<usize> {
     let mut ret = vec![1];
 
     for n in 1..=end {
-        let mut val = 0;
+        let mut val = 0i128;
         for k in 2.. {
             let p = penta((k >> 1) * (if k % 2 == 0 { 1 } else { -1 }));
             if p > n {
                 break;
             }
-            val += ret[n - p] as isize * if k & 2 == 0 { -1 } else { 1 };
+            val += ret[n - p] as i128 * if k & 2 == 0 { -1 } else { 1 };
         }
         assert!(val > 0);
-        ret.push(val as usize);
+        ret.push(val as u128);
     }
     ret
 }
@@ -473,6 +473,7 @@ fn draw_table(table: &[Vec<usize>]) -> RgbImage {
 
     let mut min_locs = vec![];
 
+    let partitions = partition_numbers(max);
     let sz = (1..).find(|n| tri(n - 1) >= max).unwrap();
     assert_eq!(tri(sz - 1), max);
     let restricted_partitions = if sz >= 3 {
@@ -489,21 +490,60 @@ fn draw_table(table: &[Vec<usize>]) -> RgbImage {
                 continue;
             }
 
-            let is_chain_start = area == 0
-                || table[area - 1][bounce + 1] != n
-                || bounce == 0
-                || table[area + 1][bounce - 1] != n;
+            #[allow(clippy::collapsible_else_if)]
+            let num_chains_started = n - if area > bounce {
+                if bounce > 0 {
+                    table[area + 1][bounce - 1]
+                } else {
+                    0
+                }
+            } else {
+                if area > 0 {
+                    table[area - 1][bounce + 1]
+                } else {
+                    0
+                }
+            };
+
+            let correction_seq = [
+                1, 2, 5, 9, 16, 26, 42, 64, 97, 142, 206, 292, 411, 568, 780, 1057, 1423, 1896,
+                2512, 3299, 4311, 5593, 7222, 9269, 11846, 15059, 19070, 24039,
+            ];
+
+            let (num_chains_is_partition, num_chains_is_almost_partition) = {
+                let (x, y) = (area.min(bounce), area.max(bounce));
+                let y_end = max - 2 * x;
+                (
+                    y_end >= y && num_chains_started == partitions[y_end - y] as usize,
+                    sz >= 4
+                        && y_end >= y + sz - 4
+                        && num_chains_started
+                            == partitions[y_end - y] as usize
+                                - correction_seq.get(y_end - (y + sz - 4)).unwrap_or(&0),
+                )
+            };
+
+            let is_chain_start = num_chains_started > 0;
             let is_restricted_partition =
                 Some(&n) == restricted_partitions.get(max - (bounce + area));
             if (area, bounce) == (max / 3 + 1, max / 3 + 1) {
                 assert!(!is_chain_start);
             }
 
-            let box_color = match (is_chain_start, is_restricted_partition) {
-                (true, true) => [0, 70, 100],
-                (true, false) => [0, 50, 0],
-                (false, true) => [0, 0, 80],
-                (false, false) => [0, 0, 0],
+            let box_color = match (
+                num_chains_is_almost_partition,
+                num_chains_is_partition,
+                is_chain_start,
+                is_restricted_partition,
+            ) {
+                (true, _, _, _) => [100, 0, 100],
+                (false, true, true, true) => [0, 80, 100],
+                (false, true, true, false) => [0, 50, 0],
+                (false, false, true, true) => [0, 70, 100],
+                (false, false, true, false) => [80, 80, 0],
+                (false, false, false, true) => [0, 0, 100],
+                (false, false, false, false) => [0, 0, 0],
+                _ => unreachable!(),
             };
 
             drawing::draw_filled_rect_mut(
