@@ -392,10 +392,12 @@ fn show_minimal_partitions(start: usize, end: usize) {
 
 /// Calculates the full area/bounce count table for paths of the given length.
 fn calc_table(len: usize) -> Vec<Vec<usize>> {
+    let len: u32 = len.try_into().unwrap();
     // Key: last column, area so far, bounce so far, next bounce location.
-    let mut counts: FxHashMap<_, _> = [((len - 1, 0, 0, 0), 1)].into_iter().collect();
+    let mut counts: FxHashMap<_, _> = [((len - 1, 0u32, 0u32, 0u32), 1)].into_iter().collect();
+    let mut counts2 = FxHashMap::default();
     for step in 0..len {
-        for ((last_col, area, bounce, bounce_loc), count) in mem::take(&mut counts) {
+        for ((last_col, area, bounce, bounce_loc), count) in counts.drain() {
             for next_col in 0..=last_col.min(len - 1 - step) {
                 let next_area = area + len - 1 - step - next_col;
                 let next_bounce = bounce + if step == bounce_loc { next_col } else { 0 };
@@ -404,17 +406,18 @@ fn calc_table(len: usize) -> Vec<Vec<usize>> {
                 } else {
                     bounce_loc
                 };
-                *counts
+                *counts2
                     .entry((next_col, next_area, next_bounce, next_bounce_loc))
                     .or_default() += count;
             }
         }
+        mem::swap(&mut counts, &mut counts2);
     }
 
-    let max = tri(len - 1);
+    let max = tri(len as usize - 1);
     let mut table: Vec<_> = (1..=max + 1).rev().map(|n| vec![0; n]).collect();
     for ((_, area, bounce, _), count) in counts {
-        table[area][bounce] += count;
+        table[area as usize][bounce as usize] += count;
     }
     table
 }
