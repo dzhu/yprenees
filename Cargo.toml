@@ -12,6 +12,7 @@ gumdrop = "0.8.1"
 gumdrop_derive = "0.8.1"
 image = "0.24.6"
 imageproc = "0.23.0"
+rustc-hash = "1.1.0"
 serde = "1.0.180"
 serde_json = "1.0.104"
 

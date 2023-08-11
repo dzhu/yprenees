@@ -1,6 +1,6 @@
 use std::{
     cmp::Reverse,
-    collections::{BTreeMap, HashMap},
+    collections::BTreeMap,
     fmt::{Display, Error, Formatter},
     fs::File,
     mem,
@@ -16,6 +16,7 @@ use embedded_graphics::{
 use gumdrop::Options;
 use image::RgbImage;
 use imageproc::{drawing, rect::Rect};
+use rustc_hash::FxHashMap;
 
 mod color_maps;
 mod draw;
@@ -392,7 +393,7 @@ fn show_minimal_partitions(start: usize, end: usize) {
 /// Calculates the full area/bounce count table for paths of the given length.
 fn calc_table(len: usize) -> Vec<Vec<usize>> {
     // Key: last column, area so far, bounce so far, next bounce location.
-    let mut counts: HashMap<_, _> = [((len - 1, 0, 0, 0), 1)].into_iter().collect();
+    let mut counts: FxHashMap<_, _> = [((len - 1, 0, 0, 0), 1)].into_iter().collect();
     for step in 0..len {
         for ((last_col, area, bounce, bounce_loc), count) in mem::take(&mut counts) {
             for next_col in 0..=last_col.min(len - 1 - step) {
