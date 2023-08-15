@@ -707,8 +707,25 @@ fn main() {
     let opts = Opts::parse_args_default_or_exit();
 
     match opts {
-        Opts::CalcTable(CalcTableOpts { sz }) => {
-            println!("{}", serde_json::to_string(&calc_table(sz)).unwrap());
+        Opts::CalcTable(CalcTableOpts { sz, output, force }) => {
+            use std::io::Write;
+            let mut f: Box<dyn Write> = match output {
+                Some(p) => Box::new(
+                    std::fs::File::options()
+                        .write(true)
+                        .create_new(!force)
+                        .open(p)
+                        .unwrap(),
+                ),
+                None => Box::new(std::io::stdout().lock()),
+            };
+
+            let t0 = std::time::Instant::now();
+            let table = calc_table(sz);
+            let dt = t0.elapsed();
+            eprintln!("{sz} {t}", t = dt.as_secs_f64());
+
+            writeln!(f, "{}", serde_json::to_string(&table).unwrap()).unwrap();
         }
         Opts::DrawTable(DrawTableOpts { in_path, out_path }) => {
             let table: Vec<Vec<usize>> = {

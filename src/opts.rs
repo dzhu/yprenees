@@ -19,6 +19,12 @@ pub enum Opts {
 pub struct CalcTableOpts {
     #[options(free)]
     pub sz: usize,
+
+    #[options(short = "o")]
+    pub output: Option<PathBuf>,
+
+    #[options(short = "f")]
+    pub force: bool,
 }
 
 #[derive(Debug, Options)]
