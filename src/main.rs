@@ -715,6 +715,7 @@ fn main() {
                 Some(p) => Box::new(
                     std::fs::File::options()
                         .write(true)
+                        .create(true)
                         .create_new(!force)
                         .open(p)
                         .unwrap(),
