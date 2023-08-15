@@ -391,7 +391,7 @@ fn show_minimal_partitions(start: usize, end: usize) {
 }
 
 /// Calculates the full area/bounce count table for paths of the given length.
-fn calc_table(len: usize) -> Vec<Vec<usize>> {
+fn calc_table(len: usize) -> Vec<Vec<u128>> {
     let len: u32 = len.try_into().unwrap();
     // Key: last column, area so far, bounce so far, next bounce location.
     let mut counts: FxHashMap<_, _> = [((len - 1, 0u32, 0u32, 0u32), 1)].into_iter().collect();
@@ -454,7 +454,7 @@ fn fit_hyperbola(pts: &[(f64, f64)]) -> (f64, f64) {
 }
 
 /// Creates an image representing the given area/bounce count table.
-fn draw_table(table: &[Vec<usize>]) -> RgbImage {
+fn draw_table(table: &[Vec<u128>]) -> RgbImage {
     const BOX_SEP: usize = 22;
 
     assert!(table
@@ -514,18 +514,20 @@ fn draw_table(table: &[Vec<usize>]) -> RgbImage {
                 let (x, y) = (area.min(bounce), area.max(bounce));
                 let y_end = max - 2 * x;
                 (
-                    y_end >= y && num_chains_started == partitions[y_end - y] as usize,
+                    y_end >= y && num_chains_started == partitions[y_end - y],
                     sz >= 4
                         && y_end >= y + sz - 4
                         && num_chains_started
-                            == partitions[y_end - y] as usize
+                            == partitions[y_end - y]
                                 - correction_seq.get(y_end - (y + sz - 4)).unwrap_or(&0),
                 )
             };
 
             let is_chain_start = num_chains_started > 0;
-            let is_restricted_partition =
-                Some(&n) == restricted_partitions.get(max - (bounce + area));
+            let is_restricted_partition = Some(n)
+                == restricted_partitions
+                    .get(max - (bounce + area))
+                    .map(|&x| x as u128);
             if (area, bounce) == (max / 3 + 1, max / 3 + 1) {
                 assert!(!is_chain_start);
             }
@@ -728,7 +730,7 @@ fn main() {
             writeln!(f, "{}", serde_json::to_string(&table).unwrap()).unwrap();
         }
         Opts::DrawTable(DrawTableOpts { in_path, out_path }) => {
-            let table: Vec<Vec<usize>> = {
+            let table: Vec<Vec<u128>> = {
                 let f = File::open(in_path).unwrap();
                 serde_json::from_reader(f).unwrap()
             };
@@ -889,7 +891,7 @@ mod tests {
 
     #[test]
     fn test_calc_table() {
-        fn calc_table_slow(len: usize) -> Vec<Vec<usize>> {
+        fn calc_table_slow(len: usize) -> Vec<Vec<u128>> {
             let max = tri(len - 1);
             let mut table: Vec<_> = (1..=max + 1).rev().map(|n| vec![0; n]).collect();
             for_all_paths(len, &mut |p| {
