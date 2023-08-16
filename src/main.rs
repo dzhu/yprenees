@@ -390,49 +390,39 @@ fn show_minimal_partitions(start: usize, end: usize) {
 }
 
 #[derive(Clone, Default)]
-struct TwoDimMap<V> {
-    vals: Vec<Vec<V>>,
+struct AutoVec<V> {
+    vals: Vec<V>,
 }
 
-impl<V: PartialEq<V>> PartialEq<TwoDimMap<V>> for TwoDimMap<V> {
-    fn eq(&self, other: &TwoDimMap<V>) -> bool {
+impl<V: PartialEq<V>> PartialEq<AutoVec<V>> for AutoVec<V> {
+    fn eq(&self, other: &AutoVec<V>) -> bool {
         self.vals == other.vals
     }
 }
 
-impl<V: Clone + Default + PartialEq<V>> TwoDimMap<V> {
-    fn get_mut(&mut self, a: usize, b: usize) -> &mut V {
+impl<V: Clone + Default + PartialEq<V>> AutoVec<V> {
+    fn get_mut(&mut self, a: usize) -> &mut V {
         if self.vals.len() <= a {
-            self.vals.resize(a + 1, vec![]);
+            self.vals.resize(a + 1, Default::default());
         }
-        if self.vals[a].len() <= b {
-            self.vals[a].resize(b + 1, Default::default());
-        }
-        &mut self.vals[a][b]
+        &mut self.vals[a]
     }
 
-    fn iter(&self) -> impl Iterator<Item = ((usize, usize), &V)> {
+    fn iter(&self) -> impl Iterator<Item = (usize, &V)> {
         self.vals
             .iter()
             .enumerate()
-            .flat_map(|(a, row)| row.iter().enumerate().map(move |(b, val)| ((a, b), val)))
             .filter(|&(_, v)| !v.eq(&V::default()))
     }
 }
 
-impl<V> TwoDimMap<V> {
-    fn clear(&mut self) {
-        for row in &mut self.vals {
-            row.clear();
-        }
-    }
-}
-
-impl<V> TwoDimMap<TwoDimMap<V>> {
+impl<V> AutoVec<AutoVec<AutoVec<AutoVec<V>>>> {
     fn clear_inner(&mut self) {
-        for row in &mut self.vals {
-            for sub in row {
-                sub.clear();
+        for a in &mut self.vals {
+            for b in &mut a.vals {
+                for c in &mut b.vals {
+                    c.vals.clear();
+                }
             }
         }
     }
@@ -441,24 +431,31 @@ impl<V> TwoDimMap<TwoDimMap<V>> {
 /// Calculates the full area/bounce count table for paths of the given length.
 fn calc_table(len: usize) -> Vec<Vec<u128>> {
     // Key: last column, next bounce location, area so far, bounce so far.
-    let mut counts: TwoDimMap<TwoDimMap<u128>> = Default::default();
-    *counts.get_mut(len - 1, 0).get_mut(0, 0) = 1;
-    let mut counts2: TwoDimMap<TwoDimMap<u128>> = Default::default();
+    let mut counts: AutoVec<AutoVec<AutoVec<AutoVec<u128>>>> = Default::default();
+    *counts.get_mut(len - 1).get_mut(0).get_mut(0).get_mut(0) = 1;
+    let mut counts2: AutoVec<AutoVec<AutoVec<AutoVec<u128>>>> = Default::default();
 
     for step in 0..len {
-        for ((last_col, bounce_loc), sub) in counts.iter() {
-            for ((area, bounce), count) in sub.iter() {
-                for next_col in 0..=last_col.min(len - 1 - step) {
-                    let next_area = area + len - 1 - step - next_col;
-                    let next_bounce = bounce + if step == bounce_loc { next_col } else { 0 };
-                    let next_bounce_loc = if step == bounce_loc {
-                        len - next_col
-                    } else {
-                        bounce_loc
-                    };
-                    *counts2
-                        .get_mut(next_col, next_bounce_loc)
-                        .get_mut(next_area, next_bounce) += count;
+        for (last_col, sub) in counts.iter() {
+            for (bounce_loc, sub) in sub.iter() {
+                for (area, sub) in sub.iter() {
+                    for (bounce, count) in sub.iter() {
+                        for next_col in 0..=last_col.min(len - 1 - step) {
+                            let next_area = area + len - 1 - step - next_col;
+                            let next_bounce =
+                                bounce + if step == bounce_loc { next_col } else { 0 };
+                            let next_bounce_loc = if step == bounce_loc {
+                                len - next_col
+                            } else {
+                                bounce_loc
+                            };
+                            *counts2
+                                .get_mut(next_col)
+                                .get_mut(next_bounce_loc)
+                                .get_mut(next_area)
+                                .get_mut(next_bounce) += count;
+                        }
+                    }
                 }
             }
         }
@@ -468,10 +465,13 @@ fn calc_table(len: usize) -> Vec<Vec<u128>> {
 
     let max = tri(len - 1);
     let mut table: Vec<_> = (1..=max + 1).rev().map(|n| vec![0; n]).collect();
-
     for (_, sub) in counts.iter() {
-        for ((area, bounce), count) in sub.iter() {
-            table[area][bounce] += count;
+        for (_, sub) in sub.iter() {
+            for (area, sub) in sub.iter() {
+                for (bounce, count) in sub.iter() {
+                    table[area][bounce] += count;
+                }
+            }
         }
     }
     table
