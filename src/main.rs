@@ -16,7 +16,6 @@ use embedded_graphics::{
 use gumdrop::Options;
 use image::RgbImage;
 use imageproc::{drawing, rect::Rect};
-use rustc_hash::FxHashMap;
 
 mod color_maps;
 mod draw;
@@ -390,34 +389,90 @@ fn show_minimal_partitions(start: usize, end: usize) {
     }
 }
 
-/// Calculates the full area/bounce count table for paths of the given length.
-fn calc_table(len: usize) -> Vec<Vec<u128>> {
-    let len: u32 = len.try_into().unwrap();
-    // Key: last column, area so far, bounce so far, next bounce location.
-    let mut counts: FxHashMap<_, _> = [((len - 1, 0u32, 0u32, 0u32), 1)].into_iter().collect();
-    let mut counts2 = FxHashMap::default();
-    for step in 0..len {
-        for ((last_col, area, bounce, bounce_loc), count) in counts.drain() {
-            for next_col in 0..=last_col.min(len - 1 - step) {
-                let next_area = area + len - 1 - step - next_col;
-                let next_bounce = bounce + if step == bounce_loc { next_col } else { 0 };
-                let next_bounce_loc = if step == bounce_loc {
-                    len - next_col
-                } else {
-                    bounce_loc
-                };
-                *counts2
-                    .entry((next_col, next_area, next_bounce, next_bounce_loc))
-                    .or_default() += count;
+#[derive(Clone, Default)]
+struct TwoDimMap<V> {
+    vals: Vec<Vec<V>>,
+}
+
+impl<V: PartialEq<V>> PartialEq<TwoDimMap<V>> for TwoDimMap<V> {
+    fn eq(&self, other: &TwoDimMap<V>) -> bool {
+        self.vals == other.vals
+    }
+}
+
+impl<V: Clone + Default + PartialEq<V>> TwoDimMap<V> {
+    fn get_mut(&mut self, a: usize, b: usize) -> &mut V {
+        if self.vals.len() <= a {
+            self.vals.resize(a + 1, vec![]);
+        }
+        if self.vals[a].len() <= b {
+            self.vals[a].resize(b + 1, Default::default());
+        }
+        &mut self.vals[a][b]
+    }
+
+    fn iter(&self) -> impl Iterator<Item = ((usize, usize), &V)> {
+        self.vals
+            .iter()
+            .enumerate()
+            .flat_map(|(a, row)| row.iter().enumerate().map(move |(b, val)| ((a, b), val)))
+            .filter(|&(_, v)| !v.eq(&V::default()))
+    }
+}
+
+impl<V> TwoDimMap<V> {
+    fn clear(&mut self) {
+        for row in &mut self.vals {
+            row.clear();
+        }
+    }
+}
+
+impl<V> TwoDimMap<TwoDimMap<V>> {
+    fn clear_inner(&mut self) {
+        for row in &mut self.vals {
+            for sub in row {
+                sub.clear();
             }
         }
+    }
+}
+
+/// Calculates the full area/bounce count table for paths of the given length.
+fn calc_table(len: usize) -> Vec<Vec<u128>> {
+    // Key: last column, next bounce location, area so far, bounce so far.
+    let mut counts: TwoDimMap<TwoDimMap<u128>> = Default::default();
+    *counts.get_mut(len - 1, 0).get_mut(0, 0) = 1;
+    let mut counts2: TwoDimMap<TwoDimMap<u128>> = Default::default();
+
+    for step in 0..len {
+        for ((last_col, bounce_loc), sub) in counts.iter() {
+            for ((area, bounce), count) in sub.iter() {
+                for next_col in 0..=last_col.min(len - 1 - step) {
+                    let next_area = area + len - 1 - step - next_col;
+                    let next_bounce = bounce + if step == bounce_loc { next_col } else { 0 };
+                    let next_bounce_loc = if step == bounce_loc {
+                        len - next_col
+                    } else {
+                        bounce_loc
+                    };
+                    *counts2
+                        .get_mut(next_col, next_bounce_loc)
+                        .get_mut(next_area, next_bounce) += count;
+                }
+            }
+        }
+        counts.clear_inner();
         mem::swap(&mut counts, &mut counts2);
     }
 
-    let max = tri(len as usize - 1);
+    let max = tri(len - 1);
     let mut table: Vec<_> = (1..=max + 1).rev().map(|n| vec![0; n]).collect();
-    for ((_, area, bounce, _), count) in counts {
-        table[area as usize][bounce as usize] += count;
+
+    for (_, sub) in counts.iter() {
+        for ((area, bounce), count) in sub.iter() {
+            table[area][bounce] += count;
+        }
     }
     table
 }
