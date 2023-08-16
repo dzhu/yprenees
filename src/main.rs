@@ -2,7 +2,7 @@ use std::{
     cmp::Reverse,
     collections::BTreeMap,
     fmt::{Display, Error, Formatter},
-    fs::File,
+    fs::{self, File},
     mem,
 };
 
@@ -713,7 +713,7 @@ fn main() {
             use std::io::Write;
             let mut f: Box<dyn Write> = match output {
                 Some(p) => Box::new(
-                    std::fs::File::options()
+                    File::options()
                         .write(true)
                         .create(true)
                         .create_new(!force)
@@ -731,10 +731,8 @@ fn main() {
             writeln!(f, "{}", serde_json::to_string(&table).unwrap()).unwrap();
         }
         Opts::DrawTable(DrawTableOpts { in_path, out_path }) => {
-            let table: Vec<Vec<u128>> = {
-                let f = File::open(in_path).unwrap();
-                serde_json::from_reader(f).unwrap()
-            };
+            let table: Vec<Vec<u128>> =
+                serde_json::from_slice(&fs::read(in_path).unwrap()).unwrap();
             draw_table(&table).save(out_path).unwrap();
         }
         Opts::CalcTableRow(CalcTableRowOpts { sz, area }) => {
