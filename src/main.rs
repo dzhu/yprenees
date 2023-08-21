@@ -430,16 +430,16 @@ impl<V> AutoVec<AutoVec<AutoVec<AutoVec<V>>>> {
 
 /// Calculates the full area/bounce count table for paths of the given length.
 fn calc_table(len: usize) -> Vec<Vec<u128>> {
-    // Key: last column, next bounce location, area so far, bounce so far.
+    // Key: bounce so far, next bounce location, last column, area so far.
     let mut counts: AutoVec<AutoVec<AutoVec<AutoVec<u128>>>> = Default::default();
-    *counts.get_mut(len - 1).get_mut(0).get_mut(0).get_mut(0) = 1;
+    *counts.get_mut(0).get_mut(0).get_mut(len - 1).get_mut(0) = 1;
     let mut counts2: AutoVec<AutoVec<AutoVec<AutoVec<u128>>>> = Default::default();
 
     for step in 0..len {
-        for (last_col, sub) in counts.iter() {
+        for (bounce, sub) in counts.iter() {
             for (bounce_loc, sub) in sub.iter() {
-                for (area, sub) in sub.iter() {
-                    for (bounce, count) in sub.iter() {
+                for (last_col, sub) in sub.iter() {
+                    for (area, count) in sub.iter() {
                         for next_col in 0..=last_col.min(len - 1 - step) {
                             let next_area = area + len - 1 - step - next_col;
                             let next_bounce =
@@ -450,10 +450,10 @@ fn calc_table(len: usize) -> Vec<Vec<u128>> {
                                 bounce_loc
                             };
                             *counts2
-                                .get_mut(next_col)
+                                .get_mut(next_bounce)
                                 .get_mut(next_bounce_loc)
-                                .get_mut(next_area)
-                                .get_mut(next_bounce) += count;
+                                .get_mut(next_col)
+                                .get_mut(next_area) += count;
                         }
                     }
                 }
@@ -465,10 +465,10 @@ fn calc_table(len: usize) -> Vec<Vec<u128>> {
 
     let max = tri(len - 1);
     let mut table: Vec<_> = (1..=max + 1).rev().map(|n| vec![0; n]).collect();
-    for (_, sub) in counts.iter() {
-        for (_, sub) in sub.iter() {
-            for (area, sub) in sub.iter() {
-                for (bounce, count) in sub.iter() {
+    for (bounce, sub) in counts.iter() {
+        for (_bounce_loc, sub) in sub.iter() {
+            for (_last_col, sub) in sub.iter() {
+                for (area, count) in sub.iter() {
                     table[area][bounce] += count;
                 }
             }
