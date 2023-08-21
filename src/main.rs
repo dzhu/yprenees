@@ -417,14 +417,8 @@ impl<V: Clone + Default + PartialEq<V>> AutoVec<V> {
 }
 
 impl<V> AutoVec<AutoVec<AutoVec<AutoVec<V>>>> {
-    fn clear_inner(&mut self) {
-        for a in &mut self.vals {
-            for b in &mut a.vals {
-                for c in &mut b.vals {
-                    c.vals.clear();
-                }
-            }
-        }
+    fn clear(&mut self) {
+        self.vals.clear();
     }
 }
 
@@ -459,7 +453,7 @@ fn calc_table(len: usize) -> Vec<Vec<u128>> {
                 }
             }
         }
-        counts.clear_inner();
+        counts.clear();
         mem::swap(&mut counts, &mut counts2);
     }
 
