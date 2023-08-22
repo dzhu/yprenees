@@ -478,6 +478,7 @@ fn calc_table(len: usize) -> Vec<Vec<u128>> {
 /// on the line x=y, so its equation is of the form (x - d) * (y - d) = c^2. The
 /// return value is (c, d).
 fn fit_hyperbola(pts: &[(f64, f64)]) -> (f64, f64) {
+    // Rotate the points by 45 degrees.
     let s2 = 1.0 / 2.0f64.sqrt();
     let n = pts.len() as f64;
     let pts: Vec<_> = pts
@@ -485,20 +486,38 @@ fn fit_hyperbola(pts: &[(f64, f64)]) -> (f64, f64) {
         .map(|&(x, y)| ((x - y) * s2, (x + y) * s2))
         .collect();
 
+    // Perform one iteration of Newton's method to compute the next c given an
+    // initial guess for c and a fixed value of d. (Doing more iterations only
+    // slows things down, it turns out.)
+    fn next_c(pts: &[(f64, f64)], c: f64, d: f64) -> f64 {
+        let f = pts.len() as f64 - pts.iter().map(|&(x, y)| (y - d) / x.hypot(c)).sum::<f64>();
+        let df = pts
+            .iter()
+            .map(|&(x, y)| (y - d) * c / (c * c + x * x).powf(1.5))
+            .sum::<f64>();
+        c - f / df
+    }
+
+    // Exactly compute the next d for a given c.
+    fn next_d(pts: &[(f64, f64)], c: f64) -> f64 {
+        pts.iter().map(|&(x, y)| y - c.hypot(x)).sum::<f64>() / pts.len() as f64
+    }
+
+    // Rough initial guesses.
     let mut c = (pts.iter().map(|&(x, y)| y * y - x * x).sum::<f64>() / n).sqrt();
-    let mut d = 0.0;
+    let mut d = next_d(&pts, c);
 
-    for _ in 0..20000 {
-        let diff_c = c * (n - pts.iter().map(|&(x, y)| (y - d) / c.hypot(x)).sum::<f64>());
-        let delta_c = diff_c * 0.005;
-        let d2 = pts.iter().map(|&(x, y)| y - c.hypot(x)).sum::<f64>() / n;
-
-        if delta_c.abs() < 1e-6 && (d2 - d).abs() < 1e-6 {
+    // Iterate to (approximate) fixity.
+    for _ in 0..10000 {
+        let c2 = next_c(&pts, c, d);
+        let d2 = next_d(&pts, c2);
+        if (c2 - c).abs() < 1e-6 && (d2 - d).abs() < 1e-6 {
             break;
         }
-        c -= delta_c;
+        c = c2;
         d = d2;
     }
+
     (c * s2, d * s2)
 }
 
